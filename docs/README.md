@@ -63,6 +63,64 @@ Different tests can be created for DuckDB extensions. The primary way of testing
 make test
 ```
 
+## Higher-level integration tests
+Unit tests ensure the extension compiles and links, but the SharePoint work also depends on real OAuth flows, HTTPS requests, and DuckDB’s secret manager. The following smoke test hits the live Microsoft Graph endpoints and is what we refer to as the “higher-level integration tests”.
+
+### Prerequisites
+- An Azure AD application that has SharePoint permissions and a redirect URI of `http://localhost:8080/callback`.
+- The `CLIENT_ID`, `TENANT_ID`, and `REDIRECT_URI` constants in `src/sharepoint_auth.cpp` updated to match your tenant/app (or temporarily set via `#define`s while testing).
+- A browser on the same machine as the DuckDB CLI so the interactive OAuth prompt can finish.
+
+### Steps
+1. **Build the extension**
+   ```sh
+   make
+   ```
+
+2. **Launch DuckDB and load the extension**
+   - If you are working from the statically linked developer shell:
+     ```sh
+     ./build/release/duckdb
+     ```
+     (the extension is preloaded).
+   - If you are testing the loadable artifact, start any DuckDB 1.4+ shell and run:
+     ```sql
+     LOAD '/absolute/path/to/build/release/extension/sharepoint/sharepoint.duckdb_extension';
+     ```
+
+3. **Create an OAuth-backed secret**  
+   In the DuckDB prompt:
+   ```sql
+   CREATE SECRET sharepoint_oauth (TYPE sharepoint, PROVIDER oauth, NAME 'sharepoint');
+   ```
+   The CLI will open a browser and then prompt you to paste the callback URL. When the call succeeds you should see “Authentication successful” in the terminal.
+
+4. **Verify that DuckDB stored the secret metadata**
+   ```sql
+   SELECT name, provider, storage_type
+   FROM duckdb_secrets()
+   WHERE type = 'sharepoint';
+   ```
+   (The secret contents remain encrypted, but this confirms registration worked.)
+
+5. **Optional: test the manual token provider**
+   ```sql
+   CREATE SECRET sharepoint_manual
+       (TYPE sharepoint, PROVIDER token, NAME 'sharepoint_manual', TOKEN '<paste existing bearer token>');
+   ```
+   This path is useful when you already captured a token with another tool and want to validate our request stack independently of the OAuth flow.
+
+6. **Exercise any SharePoint table functions**  
+   Once functions such as `sharepoint_read(...)` are implemented, run them now. All of them fetch tokens via `SharepointAuth::GetAccessToken`, so a successful call proves the end-to-end wiring (secret lookup → HTTPS request → JSON handling) is working. Until those functions exist, you can temporarily add a debug SQL scalar/table function that calls `SharepointAuth::GetAccessToken` to confirm the token can be retrieved.
+
+7. **Cleanup** (optional)  
+   ```sql
+   DROP SECRET sharepoint_oauth;
+   DROP SECRET sharepoint_manual;
+   ```
+
+These manual steps are what we mean by “higher-level integration tests”: they validate the entire authentication surface against the real Graph API, something the unit tests and tutorials cannot cover on their own. Document any findings, screenshots, or Graph request IDs in pull requests so others can reproduce failures quickly.
+
 ## Getting started with your own extension
 After creating a repository from this template, the first step is to name your extension. To rename the extension, run:
 ```

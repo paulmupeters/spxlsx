@@ -13,7 +13,7 @@ set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 project(${TARGET_NAME})
 include_directories(src/include)
-include_directories(third_party)
+include_directories(third_party/json/single_include)
 
 # Source files
 set(EXTENSION_SOURCES

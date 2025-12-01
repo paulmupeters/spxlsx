@@ -163,7 +163,7 @@ Create `src/sharepoint_excel.cpp`:
 #include "sharepoint_utils.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/common/file_system.hpp"
-#include "third_party/json.hpp"
+#include <nlohmann/json.hpp>
 
 #include <random>
 #include <sstream>

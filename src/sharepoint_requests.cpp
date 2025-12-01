@@ -1,5 +1,6 @@
 #include "sharepoint_requests.hpp"
 #include "duckdb/common/exception.hpp"
+#include "yyjson.hpp"
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -13,14 +14,14 @@ namespace duckdb {
 // Helper: Extract HTTP status code from response
 static int ExtractStatusCode(const std::string &response) {
     size_t status_pos = response.find("HTTP/");
-    if (status_pos  std::string::npos) {
+    if (status_pos == std::string::npos) {
         return 0;
     }
 
     size_t code_start = response.find(" ", status_pos) + 1;
     size_t code_end = response.find(" ", code_start);
 
-    if (code_start  std::string::npos || code_end  std::string::npos) {
+    if (code_start == std::string::npos || code_end == std::string::npos) {
         return 0;
     }
 
@@ -31,7 +32,7 @@ static int ExtractStatusCode(const std::string &response) {
 // Helper: Extract body from HTTP response
 static std::string ExtractBody(const std::string &response) {
     size_t header_end = response.find("\r\n\r\n");
-    if (header_end  std::string::npos) {
+    if (header_end == std::string::npos) {
         return "";
     }
     return response.substr(header_end + 4);
@@ -42,7 +43,8 @@ std::string PerformHttpsRequest(
     const std::string &path,
     const std::string &token,
     HttpMethod method,
-    const std::string &body) {
+    const std::string &body,
+    const std::string &content_type) {
 
     // Retry configuration
     const int MAX_RETRIES = 3;
@@ -119,13 +121,16 @@ std::string PerformHttpsRequest(
 
             // Headers
             request << "Host: " << host << "\r\n";
-            request << "Authorization: Bearer " << token << "\r\n";
+            if (!token.empty()) {
+                request << "Authorization: Bearer " << token << "\r\n";
+            }
             request << "Accept: application/json\r\n";
             request << "User-Agent: DuckDB-SharePoint-Extension/1.0\r\n";
+            request << "Connection: close\r\n";
 
             // Body (for POST/PUT)
             if (!body.empty()) {
-                request << "Content-Type: application/json\r\n";
+                request << "Content-Type: " << content_type << "\r\n";
                 request << "Content-Length: " << body.length() << "\r\n";
                 request << "\r\n";
                 request << body;
@@ -165,9 +170,9 @@ std::string PerformHttpsRequest(
             int status_code = ExtractStatusCode(response);
 
             // 14. Handle rate limiting (429) with retry
-            if (status_code  429) {
+            if (status_code == 429) {
                 if (retry_count < MAX_RETRIES) {
-                    retry_count;
+retry_count++;
                     std::this_thread::sleep_for(std::chrono::seconds(backoff_seconds));
                     backoff_seconds *= 2;  // Exponential backoff
                     continue;  // Retry
@@ -191,13 +196,86 @@ std::string PerformHttpsRequest(
                 throw;
             }
             // Otherwise, retry
-            retry_count;
+            retry_count++;
             std::this_thread::sleep_for(std::chrono::seconds(backoff_seconds));
             backoff_seconds *= 2;
         }
     }
 
     throw IOException("Failed after maximum retries");
+}
+
+// Call Microsoft Graph API to get list items
+std::string CallGraphApiListItems(
+    const std::string &site_id,
+    const std::string &list_id,
+    const std::string &token,
+    const std::string &select_fields,
+    const std::string &filter,
+    int top) {
+
+    std::ostringstream path;
+    path << "/v1.0/sites/" << site_id << "/lists/" << list_id << "/items";
+    path << "?expand=fields";
+
+    if (!select_fields.empty()) {
+        path << "&$select=" << select_fields;
+    }
+
+    if (!filter.empty()) {
+        path << "&$filter=" << filter;
+    }
+
+    if (top > 0) {
+        path << "&$top=" << top;
+    }
+
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+}
+
+// Get list schema/metadata
+std::string GetListMetadata(
+    const std::string &site_id,
+    const std::string &list_id,
+    const std::string &token) {
+
+    std::ostringstream path;
+    path << "/v1.0/sites/" << site_id << "/lists/" << list_id;
+    path << "?expand=columns";
+
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+}
+
+// Get site information from URL
+std::string GetSiteByUrl(
+    const std::string &site_url,
+    const std::string &token) {
+
+    // URL encode the site URL
+    // For simplicity, we'll handle this in utils module
+    std::ostringstream path;
+    path << "/v1.0/sites/root:/" << site_url;
+
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+}
+
+// Get document library items
+std::string GetLibraryItems(
+    const std::string &site_id,
+    const std::string &drive_id,
+    const std::string &token,
+    const std::string &folder_path) {
+
+    std::ostringstream path;
+    path << "/v1.0/sites/" << site_id << "/drives/" << drive_id;
+
+    if (folder_path.empty()) {
+        path << "/root/children";
+    } else {
+        path << "/root:/" << folder_path << ":/children";
+    }
+
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
 }
 
 } // namespace duckdb

@@ -90,7 +90,7 @@ Update `src/sharepoint_auth.cpp` to integrate with DuckDB's secret manager:
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/secret/secret.hpp"
 #include "duckdb/common/types/value.hpp"
-#include "third_party/json.hpp"
+#include <nlohmann/json.hpp>
 
 #include <iostream>
 #include <sstream>

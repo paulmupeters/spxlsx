@@ -39,7 +39,10 @@ duckdb_sharepoint/
 │   ├── sharepoint_requests.cpp
 │   └── sharepoint_utils.cpp
 ├── third_party/
-│   └── json.hpp
+│   └── json/
+│       └── single_include/
+│           └── nlohmann/
+│               └── json.hpp
 └── test/
     └── sql/
         └── read_sharepoint.test
@@ -49,7 +52,7 @@ Create these directories:
 
 ```bash
 mkdir -p src/include
-mkdir -p third_party
+mkdir -p third_party/json/single_include/nlohmann
 mkdir -p test/sql
 ```
 
@@ -60,7 +63,7 @@ mkdir -p test/sql
 This is a header-only JSON library that makes parsing SharePoint API responses easy:
 
 ```bash
-curl -L https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp -o third_party/json.hpp
+curl -L https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp -o third_party/json/single_include/nlohmann/json.hpp
 ```
 
 ### Set Up VCPKG for OpenSSL
@@ -114,7 +117,7 @@ find_package(OpenSSL REQUIRED)
 
 # Include DuckDB extension CMake helpers
 include_directories(src/include)
-include_directories(third_party)
+include_directories(third_party/json/single_include)
 
 # Source files
 set(EXTENSION_SOURCES

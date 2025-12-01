@@ -2,7 +2,7 @@
 
 namespace duckdb {
 
-void RegisterSharepointReadFunction(DatabaseInstance &db) {
+void RegisterSharepointReadFunction(ExtensionLoader &loader) {
     // To be implemented in module 05
 }
 

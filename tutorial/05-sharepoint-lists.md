@@ -74,7 +74,7 @@ Create the bind function in `src/sharepoint_read.cpp`:
 #include "sharepoint_utils.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "third_party/json.hpp"
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
