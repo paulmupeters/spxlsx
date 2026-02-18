@@ -102,11 +102,7 @@ static json ExchangeCodeForToken(const std::string &auth_code) {
          << "&grant_type=authorization_code";
 
     std::string token_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/token";
-    
-    // Debug logging
-    std::cout << "DEBUG: Token endpoint: " << token_endpoint << std::endl;
-    std::cout << "DEBUG: Request body: " << body.str() << std::endl;
-    std::cout << "DEBUG: Auth code: " << auth_code << std::endl;
+
 
     std::string response = PerformHttpsRequest(
         "login.microsoftonline.com",
@@ -117,9 +113,6 @@ static json ExchangeCodeForToken(const std::string &auth_code) {
         "application/x-www-form-urlencoded"
     );
     
-    // Debug response
-    std::cout << "DEBUG: Response: " << response << std::endl;
-
     return json::parse(response);
 }
 
@@ -143,9 +136,6 @@ static unique_ptr<BaseSecret> CreateSharepointSecretFromOAuth(ClientContext &con
     std::cout << "If the browser doesn't open, visit this URL:\n";
     std::cout << url << "\n\n";
     
-    // Debug: Show the authorization URL
-    std::cout << "DEBUG: Authorization URL: " << url << std::endl;
-
     // 2. Open browser
     OpenBrowser(url);
 
@@ -199,11 +189,11 @@ std::string SharepointAuth::GetAccessToken(ClientContext &context) {
     // 1. Get secret manager
     auto &secret_manager = SecretManager::Get(context);
 
-    // 2. Find SharePoint secret
+    // 2. Find SharePoint secret by type (not by name)
     auto transaction = CatalogTransaction::GetSystemCatalogTransaction(context);
-    auto secret_entry = secret_manager.GetSecretByName(transaction, "sharepoint");
+    auto secret_match = secret_manager.LookupSecret(transaction, "", "sharepoint");
 
-    if (!secret_entry) {
+    if (!secret_match.HasMatch()) {
         throw IOException(
             "No SharePoint credentials found. Create a secret first:\n"
             "  CREATE SECRET (TYPE sharepoint, PROVIDER oauth);\n"
@@ -213,11 +203,8 @@ std::string SharepointAuth::GetAccessToken(ClientContext &context) {
     }
 
     // 3. Get the secret
-    auto secret_ptr = secret_entry->secret.get();
-    if (!secret_ptr) {
-        throw IOException("Invalid SharePoint secret entry");
-    }
-    auto kv_secret = dynamic_cast<const KeyValueSecret*>(secret_ptr);
+    auto &secret = secret_match.GetSecret();
+    auto kv_secret = dynamic_cast<const KeyValueSecret*>(&secret);
 
     if (!kv_secret) {
         throw IOException("Invalid secret format");

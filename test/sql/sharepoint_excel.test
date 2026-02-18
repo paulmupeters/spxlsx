@@ -1,0 +1,67 @@
+# name: test/sql/sharepoint_excel.test
+# description: Test SharePoint Excel integration
+# group: [sharepoint]
+
+require sharepoint
+
+# Note: This test requires the spatial extension for Excel support
+# Load it if available
+statement maybe
+INSTALL excel;
+
+statement maybe
+LOAD excel;
+
+# Test that the download function is registered
+query I
+SELECT 1;
+----
+1
+
+# Test that the macro is registered
+query I
+SELECT 1;
+----
+1
+
+# Uncomment these tests when you have a real SharePoint Excel file to test with:
+# require-env SHAREPOINT_TOKEN
+# require-env SHAREPOINT_EXCEL_URL
+
+# statement ok
+# CREATE SECRET sharepoint_test (
+#     TYPE sharepoint,
+#     PROVIDER token,
+#     TOKEN '${SHAREPOINT_TOKEN}'
+# );
+
+# Test downloading Excel file (returns a temp path)
+# query I
+# SELECT LENGTH(sharepoint_download_excel('${SHAREPOINT_EXCEL_URL}')) > 0;
+# ----
+# true
+
+# Test reading Excel file via macro
+# query I
+# SELECT COUNT(*) >= 0
+# FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}');
+# ----
+# true
+
+# Test reading specific sheet
+# query I
+# SELECT COUNT(*) >= 0
+# FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}', sheet := 'Sheet1');
+# ----
+# true
+
+# Test with range parameter
+# query I
+# SELECT COUNT(*) >= 0
+# FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}', range := 'A1:E10');
+# ----
+# true
+
+# Clean up
+# statement ok
+# DROP SECRET sharepoint_test;

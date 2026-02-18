@@ -55,4 +55,12 @@ std::string GetLibraryItems(
     const std::string &folder_path = ""
 );
 
+// Download file content from SharePoint (binary data)
+std::string DownloadSharepointFileContent(
+    const std::string &site_id,
+    const std::string &drive_id,
+    const std::string &item_id,
+    const std::string &token
+);
+
 } // namespace duckdb

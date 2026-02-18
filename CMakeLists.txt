@@ -22,6 +22,7 @@ set(EXTENSION_SOURCES
     src/sharepoint_read.cpp
     src/sharepoint_requests.cpp
     src/sharepoint_utils.cpp
+    src/sharepoint_excel.cpp
 )
 
 build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})

@@ -29,13 +29,147 @@ static int ExtractStatusCode(const std::string &response) {
     return std::stoi(code_str);
 }
 
+// Helper: Check if response uses chunked transfer encoding
+static bool IsChunkedEncoding(const std::string &response) {
+    // Look for "Transfer-Encoding: chunked" in headers (case-insensitive search)
+    // Try \r\n\r\n first, then \n\n
+    size_t header_end = response.find("\r\n\r\n");
+    if (header_end == std::string::npos) {
+        header_end = response.find("\n\n");
+    }
+    if (header_end == std::string::npos) {
+        return false;
+    }
+    std::string headers = response.substr(0, header_end);
+    
+    // Convert to lowercase for comparison
+    std::string headers_lower = headers;
+    for (char &c : headers_lower) {
+        c = std::tolower(c);
+    }
+    
+    // Check for various formats of the chunked header
+    return headers_lower.find("transfer-encoding: chunked") != std::string::npos ||
+           headers_lower.find("transfer-encoding:chunked") != std::string::npos;
+}
+
+// Helper: Find line ending (handles both \r\n and \n)
+static size_t FindLineEnd(const std::string &str, size_t start, size_t &line_end_len) {
+    size_t crlf = str.find("\r\n", start);
+    size_t lf = str.find("\n", start);
+    
+    if (crlf != std::string::npos && (lf == std::string::npos || crlf <= lf)) {
+        line_end_len = 2;
+        return crlf;
+    } else if (lf != std::string::npos) {
+        line_end_len = 1;
+        return lf;
+    }
+    
+    line_end_len = 0;
+    return std::string::npos;
+}
+
+// Helper: Decode chunked transfer encoding
+static std::string DecodeChunkedBody(const std::string &chunked_body) {
+    std::string result;
+    size_t pos = 0;
+    
+    while (pos < chunked_body.size()) {
+        // Find the end of the chunk size line (handle both \r\n and \n)
+        size_t line_end_len = 0;
+        size_t line_end = FindLineEnd(chunked_body, pos, line_end_len);
+        if (line_end == std::string::npos) {
+            break;
+        }
+        
+        // Parse chunk size (hexadecimal)
+        std::string size_str = chunked_body.substr(pos, line_end - pos);
+        
+        // Remove any chunk extensions (after semicolon)
+        size_t semicolon = size_str.find(';');
+        if (semicolon != std::string::npos) {
+            size_str = size_str.substr(0, semicolon);
+        }
+        
+        // Trim whitespace (including \r if present)
+        while (!size_str.empty() && (std::isspace(size_str.front()) || size_str.front() == '\r')) {
+            size_str.erase(0, 1);
+        }
+        while (!size_str.empty() && (std::isspace(size_str.back()) || size_str.back() == '\r')) {
+            size_str.pop_back();
+        }
+        
+        if (size_str.empty()) {
+            pos = line_end + line_end_len;
+            continue;
+        }
+        
+        // Convert hex to integer
+        size_t chunk_size = 0;
+        try {
+            chunk_size = std::stoul(size_str, nullptr, 16);
+        } catch (...) {
+            // If we can't parse the chunk size, return what we have
+            break;
+        }
+        
+        // Size of 0 indicates end of chunks
+        if (chunk_size == 0) {
+            break;
+        }
+        
+        // Move past the size line
+        pos = line_end + line_end_len;
+        
+        // Check if we have enough data for this chunk
+        if (pos + chunk_size > chunked_body.size()) {
+            // Incomplete chunk, append what we can
+            result += chunked_body.substr(pos);
+            break;
+        }
+        
+        // Append the chunk data
+        result += chunked_body.substr(pos, chunk_size);
+        
+        // Move past chunk data and trailing line ending
+        pos += chunk_size;
+        // Skip the trailing \r\n or \n after chunk data
+        if (pos < chunked_body.size() && chunked_body[pos] == '\r') {
+            pos++;
+        }
+        if (pos < chunked_body.size() && chunked_body[pos] == '\n') {
+            pos++;
+        }
+    }
+    
+    return result;
+}
+
 // Helper: Extract body from HTTP response
 static std::string ExtractBody(const std::string &response) {
+    // Try \r\n\r\n first (standard HTTP)
     size_t header_end = response.find("\r\n\r\n");
+    size_t body_start_offset = 4;
+    
+    // Fall back to \n\n if standard not found
+    if (header_end == std::string::npos) {
+        header_end = response.find("\n\n");
+        body_start_offset = 2;
+    }
+    
     if (header_end == std::string::npos) {
         return "";
     }
-    return response.substr(header_end + 4);
+    
+    std::string body = response.substr(header_end + body_start_offset);
+    
+    // Check if chunked encoding is used
+    if (IsChunkedEncoding(response)) {
+        return DecodeChunkedBody(body);
+    }
+    
+    return body;
 }
 
 std::string PerformHttpsRequest(
@@ -216,7 +350,7 @@ std::string CallGraphApiListItems(
 
     std::ostringstream path;
     path << "/v1.0/sites/" << site_id << "/lists/" << list_id << "/items";
-    path << "?expand=fields";
+    path << "?$expand=fields";
 
     if (!select_fields.empty()) {
         path << "&$select=" << select_fields;
@@ -241,7 +375,7 @@ std::string GetListMetadata(
 
     std::ostringstream path;
     path << "/v1.0/sites/" << site_id << "/lists/" << list_id;
-    path << "?expand=columns";
+    path << "?$expand=columns";
 
     return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
 }
@@ -275,6 +409,23 @@ std::string GetLibraryItems(
         path << "/root:/" << folder_path << ":/children";
     }
 
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+}
+
+// Download file content from SharePoint (binary data)
+std::string DownloadSharepointFileContent(
+    const std::string &site_id,
+    const std::string &drive_id,
+    const std::string &item_id,
+    const std::string &token) {
+
+    std::ostringstream path;
+    path << "/v1.0/sites/" << site_id
+         << "/drives/" << drive_id
+         << "/items/" << item_id
+         << "/content";
+
+    // This returns the binary file content
     return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
 }
 
