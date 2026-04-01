@@ -19,7 +19,8 @@ std::string PerformHttpsRequest(
     const std::string &token,
     HttpMethod method = HttpMethod::GET,
     const std::string &body = "",
-    const std::string &content_type = "application/json"
+    const std::string &content_type = "application/json",
+    const std::string &accept = "application/json"
 );
 
 // SharePoint-specific API wrappers

@@ -5,25 +5,16 @@
 #include "duckdb/common/types/value.hpp"
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
-#include <thread>
 #include <chrono>
-
-#ifdef _WIN32
-    #include <windows.h>
-    #include <shellapi.h>
-#else
-    #include <unistd.h>
-#endif
+#include <thread>
 
 using json = nlohmann::json;
 
 namespace duckdb {
 
-// Constants for Azure AD OAuth
-static const std::string AZURE_AUTH_URL = "https://login.microsoftonline.com";
-static const std::string REDIRECT_URI = "http://localhost:8080/callback";
 static const std::string TENANT_ID = "common";  // Use "common" for multi-tenant
 
 // TODO: Replace with your Azure AD application client ID
@@ -38,51 +29,6 @@ static const std::string SCOPES = "https://graph.microsoft.com/Sites.Read.All "
 static const std::string SCOPES_ENCODED = "https%3A%2F%2Fgraph.microsoft.com%2FSites.Read.All%20"
                                           "https%3A%2F%2Fgraph.microsoft.com%2FFiles.Read.All%20"
                                           "offline_access";
-static const std::string REDIRECT_URI_ENCODED = "http%3A%2F%2Flocalhost%3A8080%2Fcallback";
-
-// Helper: Open URL in browser
-static void OpenBrowser(const std::string &url) {
-#ifdef _WIN32
-    ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-#elif __APPLE__
-    std::string command = "open \"" + url + "\"";
-    system(command.c_str());
-#else
-    std::string command = "xdg-open \"" + url + "\" || firefox \"" + url + "\" || google-chrome \"" + url + "\"";
-    system(command.c_str());
-#endif
-}
-
-// Helper: Start local HTTP server to receive OAuth callback
-static std::string StartCallbackServer(int port = 8080) {
-    // This is a simplified version - in production, use a proper HTTP library
-    // For now, we'll simulate this with user input
-
-    std::cout << "\n=\n";
-    std::cout << "After authorizing, you'll be redirected to:\n";
-    std::cout << "http://localhost:8080/callback?code=...\n";
-    std::cout << "\nCopy the ENTIRE URL from your browser and paste it here:\n";
-    std::cout << "=\n";
-    std::cout << "URL: ";
-
-    std::string callback_url;
-    std::getline(std::cin, callback_url);
-
-    // Extract code parameter from URL
-    size_t code_pos = callback_url.find("code=");
-    if (code_pos == std::string::npos) {
-        throw IOException("No authorization code found in URL");
-    }
-
-    size_t code_start = code_pos + 5;  // Length of "code="
-    size_t code_end = callback_url.find("&", code_start);
-
-    if (code_end == std::string::npos) {
-        code_end = callback_url.length();
-    }
-
-    return callback_url.substr(code_start, code_end - code_start);
-}
 
 static vector<string> NormalizeSecretScope(const CreateSecretInput &input) {
     auto scope = input.scope;
@@ -92,75 +38,176 @@ static vector<string> NormalizeSecretScope(const CreateSecretInput &input) {
     return scope;
 }
 
-// Helper: Exchange authorization code for access token
-static json ExchangeCodeForToken(const std::string &auth_code) {
+static json ParseJsonResponse(const std::string &response, const std::string &context) {
+    try {
+        return json::parse(response);
+    } catch (const std::exception &ex) {
+        throw IOException("Failed to parse " + context + " response: " + std::string(ex.what()));
+    }
+}
+
+static std::string ExtractHttpErrorBody(const std::exception &ex) {
+    std::string message = ex.what();
+    if (!message.empty() && message.front() == '{') {
+        try {
+            auto exception_json = json::parse(message);
+            auto exception_message = exception_json.value("exception_message", "");
+            if (!exception_message.empty()) {
+                message = std::move(exception_message);
+            }
+        } catch (...) {
+        }
+    }
+
+    const std::string http_marker = "HTTP ";
+    auto http_pos = message.find(http_marker);
+    if (http_pos == std::string::npos) {
+        return "";
+    }
+
+    auto separator = message.find(": ", http_pos);
+    if (separator == std::string::npos || separator + 2 > message.size()) {
+        return "";
+    }
+
+    return message.substr(separator + 2);
+}
+
+static json RequestDeviceCode() {
     std::ostringstream body;
     body << "client_id=" << CLIENT_ID
-         << "&scope=" << SCOPES_ENCODED
-         << "&code=" << auth_code
-         << "&redirect_uri=" << REDIRECT_URI_ENCODED
-         << "&grant_type=authorization_code";
+         << "&scope=" << SCOPES_ENCODED;
 
-    std::string token_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/token";
-
+    std::string device_code_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/devicecode";
 
     std::string response = PerformHttpsRequest(
         "login.microsoftonline.com",
-        token_endpoint,
+        device_code_endpoint,
         "",  // No token needed for this request
         HttpMethod::POST,
         body.str(),
         "application/x-www-form-urlencoded"
     );
-    
-    return json::parse(response);
+
+    return ParseJsonResponse(response, "device code");
+}
+
+static json PollDeviceCodeToken(
+    const std::string &device_code,
+    int interval_seconds,
+    int expires_in_seconds) {
+
+    std::ostringstream body;
+    body << "grant_type=urn:ietf:params:oauth:grant-type:device_code"
+         << "&client_id=" << CLIENT_ID
+         << "&device_code=" << device_code;
+
+    std::string token_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/token";
+    int poll_interval = std::max(1, interval_seconds);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(std::max(1, expires_in_seconds));
+
+    while (std::chrono::steady_clock::now() < deadline) {
+        try {
+            std::string response = PerformHttpsRequest(
+                "login.microsoftonline.com",
+                token_endpoint,
+                "",  // No bearer token needed during polling
+                HttpMethod::POST,
+                body.str(),
+                "application/x-www-form-urlencoded"
+            );
+            return ParseJsonResponse(response, "token");
+        } catch (const std::exception &ex) {
+            auto error_body = ExtractHttpErrorBody(ex);
+            if (error_body.empty()) {
+                throw;
+            }
+
+            auto error_response = ParseJsonResponse(error_body, "device code token error");
+            auto error = error_response.value("error", "");
+            auto error_description = error_response.value("error_description", "");
+
+            if (error == "authorization_pending") {
+                std::this_thread::sleep_for(std::chrono::seconds(poll_interval));
+                continue;
+            }
+            if (error == "slow_down") {
+                poll_interval += 5;
+                std::this_thread::sleep_for(std::chrono::seconds(poll_interval));
+                continue;
+            }
+            if (error == "authorization_declined") {
+                throw IOException("Device code sign-in was declined. Please run CREATE SECRET again.");
+            }
+            if (error == "expired_token") {
+                throw IOException("Device code expired before sign-in completed. Please run CREATE SECRET again.");
+            }
+            if (error == "bad_verification_code") {
+                throw IOException("Microsoft rejected the device code during sign-in. Please run CREATE SECRET again.");
+            }
+
+            if (!error_description.empty()) {
+                throw IOException("Device code sign-in failed: " + error_description);
+            }
+            if (!error.empty()) {
+                throw IOException("Device code sign-in failed: " + error);
+            }
+            throw;
+        }
+    }
+
+    throw IOException("Device code expired before sign-in completed. Please run CREATE SECRET again.");
 }
 
 // Create secret from OAuth flow
 static unique_ptr<BaseSecret> CreateSharepointSecretFromOAuth(ClientContext &context, CreateSecretInput &input) {
 
-    std::cout << "\n= SharePoint OAuth Authentication =\n\n";
+    std::cout << "\n= SharePoint Device Code Authentication =\n\n";
 
-    // 1. Generate authorization URL
-    std::ostringstream auth_url;
-    auth_url << AZURE_AUTH_URL << "/" << TENANT_ID << "/oauth2/v2.0/authorize"
-             << "?client_id=" << CLIENT_ID
-             << "&response_type=code"
-             << "&redirect_uri=" << REDIRECT_URI
-             << "&scope=" << SCOPES_ENCODED
-             << "&response_mode=query";
+    // 1. Request a device code from Microsoft
+    json device_code_response = RequestDeviceCode();
 
-    std::string url = auth_url.str();
+    std::string device_code = device_code_response.value("device_code", "");
+    std::string user_code = device_code_response.value("user_code", "");
+    std::string verification_uri = device_code_response.value("verification_uri", "");
+    std::string message = device_code_response.value("message", "");
+    int interval = device_code_response.value("interval", 5);
+    int expires_in = device_code_response.value("expires_in", 900);
 
-    std::cout << "Opening browser for authentication...\n";
-    std::cout << "If the browser doesn't open, visit this URL:\n";
-    std::cout << url << "\n\n";
-    
-    // 2. Open browser
-    OpenBrowser(url);
+    if (device_code.empty()) {
+        throw IOException("Microsoft did not return a device code.");
+    }
 
-    // 3. Wait for callback
-    std::string auth_code = StartCallbackServer();
+    // 2. Show the verification instructions to the user
+    if (!message.empty()) {
+        std::cout << message << "\n\n";
+    } else {
+        std::cout << "Open the Microsoft device login page and enter code: "
+                  << user_code << "\n\n";
+        if (!verification_uri.empty()) {
+            std::cout << "Verification URL: " << verification_uri << "\n\n";
+        }
+    }
 
-    std::cout << "\nExchanging authorization code for token...\n";
+    std::cout << "Waiting for Microsoft sign-in to complete...\n";
 
-    // 4. Exchange code for token
-    json token_response = ExchangeCodeForToken(auth_code);
+    // 3. Poll the token endpoint until the user finishes signing in
+    json token_response = PollDeviceCodeToken(device_code, interval, expires_in);
 
-    // 5. Extract tokens
+    // 4. Extract tokens
     std::string access_token = token_response["access_token"];
     std::string refresh_token = token_response.value("refresh_token", "");
-    int expires_in = token_response.value("expires_in", 3600);
+    int token_expires_in = token_response.value("expires_in", 3600);
 
-    // 6. Calculate expiration time
+    // 5. Calculate expiration time
     auto now = std::chrono::system_clock::now();
-    auto expiration = now + std::chrono::seconds(expires_in);
+    auto expiration = now + std::chrono::seconds(token_expires_in);
     auto expiration_time = std::chrono::system_clock::to_time_t(expiration);
 
-    std::cout << "✓ Authentication successful!\n";
-    std::cout << "Token expires in " << expires_in << " seconds\n\n";
+    std::cout << "Authentication successful.\n";
+    std::cout << "Token expires in " << token_expires_in << " seconds\n\n";
 
-    // 7. Create DuckDB secret
+    // 6. Create DuckDB secret
     auto scope = NormalizeSecretScope(input);
     auto secret = make_uniq<KeyValueSecret>(scope, input.type, input.provider, input.name);
     secret->secret_map["access_token"] = access_token;

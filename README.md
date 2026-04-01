@@ -10,9 +10,10 @@ DuckDB extension for querying SharePoint data directly from SQL.
 - SharePoint authentication through DuckDB secrets (`PROVIDER oauth` and `PROVIDER token`)
 
 ## Build
+for incremental builds: 
 
 ```sh
-make
+make GEN=ninja
 ```
 
 Useful build artifacts:
@@ -86,6 +87,8 @@ LOAD excel;
 - `header := ...`
 - `all_varchar := ...`
 - `ignore_errors := ...`
+
+load the excel extension first, then
 
 ```sql
 SELECT *

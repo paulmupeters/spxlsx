@@ -8,6 +8,7 @@
 #include <sstream>
 #include <thread>
 #include <chrono>
+#include <cctype>
 
 namespace duckdb {
 
@@ -172,13 +173,97 @@ static std::string ExtractBody(const std::string &response) {
     return body;
 }
 
-std::string PerformHttpsRequest(
+static std::string ExtractHeaderValue(const std::string &response, const std::string &header_name) {
+    size_t header_end = response.find("\r\n\r\n");
+    size_t line_ending_size = 2;
+    if (header_end == std::string::npos) {
+        header_end = response.find("\n\n");
+        line_ending_size = 1;
+    }
+    if (header_end == std::string::npos) {
+        return "";
+    }
+
+    std::string headers = response.substr(0, header_end);
+    std::string needle = header_name;
+    for (char &c : needle) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    needle += ":";
+
+    size_t pos = 0;
+    while (pos < headers.size()) {
+        size_t line_end = headers.find(line_ending_size == 2 ? "\r\n" : "\n", pos);
+        if (line_end == std::string::npos) {
+            line_end = headers.size();
+        }
+
+        std::string line = headers.substr(pos, line_end - pos);
+        std::string line_lower = line;
+        for (char &c : line_lower) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+
+        if (line_lower.rfind(needle, 0) == 0) {
+            std::string value = line.substr(header_name.size() + 1);
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) {
+                value.erase(0, 1);
+            }
+            while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+                value.pop_back();
+            }
+            return value;
+        }
+
+        pos = line_end + line_ending_size;
+    }
+
+    return "";
+}
+
+struct ParsedHttpsUrl {
+    std::string host;
+    std::string path;
+};
+
+static ParsedHttpsUrl ParseHttpsUrl(const std::string &url) {
+    const std::string https_prefix = "https://";
+    if (url.rfind(https_prefix, 0) != 0) {
+        throw IOException("Only HTTPS redirect URLs are supported: " + url);
+    }
+
+    size_t host_start = https_prefix.size();
+    size_t path_start = url.find('/', host_start);
+
+    ParsedHttpsUrl result;
+    if (path_start == std::string::npos) {
+        result.host = url.substr(host_start);
+        result.path = "/";
+    } else {
+        result.host = url.substr(host_start, path_start - host_start);
+        result.path = url.substr(path_start);
+    }
+
+    if (result.host.empty()) {
+        throw IOException("Redirect URL is missing a host: " + url);
+    }
+
+    return result;
+}
+
+static std::string PerformHttpsRequestInternal(
     const std::string &host,
     const std::string &path,
     const std::string &token,
     HttpMethod method,
     const std::string &body,
-    const std::string &content_type) {
+    const std::string &content_type,
+    const std::string &accept,
+    int redirect_count) {
+
+    if (redirect_count > 5) {
+        throw IOException("Too many HTTP redirects while requesting " + host + path);
+    }
 
     // Retry configuration
     const int MAX_RETRIES = 3;
@@ -258,7 +343,7 @@ std::string PerformHttpsRequest(
             if (!token.empty()) {
                 request << "Authorization: Bearer " << token << "\r\n";
             }
-            request << "Accept: application/json\r\n";
+            request << "Accept: " << accept << "\r\n";
             request << "User-Agent: DuckDB-SharePoint-Extension/1.0\r\n";
             request << "Connection: close\r\n";
 
@@ -286,9 +371,8 @@ std::string PerformHttpsRequest(
             char buffer[4096];
             int read_bytes;
 
-            while ((read_bytes = BIO_read(bio, buffer, sizeof(buffer) - 1)) > 0) {
-                buffer[read_bytes] = '\0';
-                response += buffer;
+            while ((read_bytes = BIO_read(bio, buffer, sizeof(buffer))) > 0) {
+                response.append(buffer, read_bytes);
             }
 
             // 11. Cleanup
@@ -306,7 +390,7 @@ std::string PerformHttpsRequest(
             // 14. Handle rate limiting (429) with retry
             if (status_code == 429) {
                 if (retry_count < MAX_RETRIES) {
-retry_count++;
+                    retry_count++;
                     std::this_thread::sleep_for(std::chrono::seconds(backoff_seconds));
                     backoff_seconds *= 2;  // Exponential backoff
                     continue;  // Retry
@@ -315,13 +399,45 @@ retry_count++;
                 }
             }
 
-            // 15. Handle other HTTP errors
-            if (status_code >= 400) {
-                std::string body = ExtractBody(response);
-                throw IOException("HTTP " + std::to_string(status_code) + ": " + body);
+            // 15. Follow redirects, which Graph commonly uses for /content downloads.
+            if (status_code >= 300 && status_code < 400) {
+                std::string location = ExtractHeaderValue(response, "Location");
+                if (location.empty()) {
+                    throw IOException("HTTP " + std::to_string(status_code) + " redirect without a Location header");
+                }
+
+                ParsedHttpsUrl redirect_target;
+                if (location.rfind("https://", 0) == 0) {
+                    redirect_target = ParseHttpsUrl(location);
+                } else if (!location.empty() && location[0] == '/') {
+                    redirect_target = {host, location};
+                } else {
+                    throw IOException("Unsupported redirect URL: " + location);
+                }
+
+                // Graph download redirects often point to a signed URL on another host.
+                // Only forward the bearer token when staying on the same host.
+                std::string redirect_token = redirect_target.host == host ? token : "";
+
+                return PerformHttpsRequestInternal(
+                    redirect_target.host,
+                    redirect_target.path,
+                    redirect_token,
+                    method,
+                    body,
+                    content_type,
+                    accept,
+                    redirect_count + 1
+                );
             }
 
-            // 16. Return response body
+            // 16. Handle other HTTP errors
+            if (status_code >= 400) {
+                std::string response_body = ExtractBody(response);
+                throw IOException("HTTP " + std::to_string(status_code) + ": " + response_body);
+            }
+
+            // 17. Return response body
             return ExtractBody(response);
 
         } catch (const std::exception &e) {
@@ -337,6 +453,17 @@ retry_count++;
     }
 
     throw IOException("Failed after maximum retries");
+}
+
+std::string PerformHttpsRequest(
+    const std::string &host,
+    const std::string &path,
+    const std::string &token,
+    HttpMethod method,
+    const std::string &body,
+    const std::string &content_type,
+    const std::string &accept) {
+    return PerformHttpsRequestInternal(host, path, token, method, body, content_type, accept, 0);
 }
 
 // Call Microsoft Graph API to get list items
@@ -426,7 +553,7 @@ std::string DownloadSharepointFileContent(
          << "/content";
 
     // This returns the binary file content
-    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+    return PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET, "", "application/json", "*/*");
 }
 
 } // namespace duckdb

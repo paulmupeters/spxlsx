@@ -5,13 +5,16 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "yyjson.hpp"
 
+#include <algorithm>
 #include <random>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 #include <cstdlib>
+#include <cctype>
 
 using json = duckdb_yyjson::yyjson_doc;
 using json_val = duckdb_yyjson::yyjson_val;
@@ -22,6 +25,14 @@ namespace duckdb {
 static std::unordered_map<std::string, std::string> file_cache;
 static std::mutex cache_mutex;
 static std::vector<std::string> temp_files_to_cleanup;
+
+static bool LooksLikeZipArchive(const std::string &content) {
+    return content.size() >= 4 &&
+           static_cast<unsigned char>(content[0]) == 0x50 &&
+           static_cast<unsigned char>(content[1]) == 0x4B &&
+           static_cast<unsigned char>(content[2]) == 0x03 &&
+           static_cast<unsigned char>(content[3]) == 0x04;
+}
 
 // Generate temporary file path (cross-platform)
 static std::string GenerateTempPath(const std::string &filename) {
@@ -70,6 +81,91 @@ struct SharePointFileInfo {
     std::string filename;
 };
 
+static std::string UrlDecode(const std::string &value) {
+    std::string decoded;
+    decoded.reserve(value.size());
+
+    for (size_t i = 0; i < value.length(); ++i) {
+        if (value[i] == '%' && i + 2 < value.length()) {
+            std::string hex = value.substr(i + 1, 2);
+            char ch = static_cast<char>(std::stoi(hex, nullptr, 16));
+            decoded += ch;
+            i += 2;
+        } else if (value[i] == '+') {
+            decoded += ' ';
+        } else {
+            decoded += value[i];
+        }
+    }
+
+    return decoded;
+}
+
+static std::string GetQueryParameter(const std::string &url, const std::string &param_name) {
+    size_t query_pos = url.find('?');
+    if (query_pos == std::string::npos || query_pos + 1 >= url.length()) {
+        return "";
+    }
+
+    std::string query = url.substr(query_pos + 1);
+    std::string needle = param_name + "=";
+    size_t start = 0;
+
+    while (start < query.length()) {
+        size_t end = query.find('&', start);
+        if (end == std::string::npos) {
+            end = query.length();
+        }
+
+        std::string pair = query.substr(start, end - start);
+        if (pair.rfind(needle, 0) == 0) {
+            return UrlDecode(pair.substr(needle.length()));
+        }
+
+        start = end + 1;
+    }
+
+    return "";
+}
+
+static std::string Base64UrlEncode(const std::string &value) {
+    static const char *BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    std::string encoded;
+    encoded.reserve(((value.size() + 2) / 3) * 4);
+
+    int val = 0;
+    int valb = -6;
+    for (unsigned char c : value) {
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            encoded.push_back(BASE64_CHARS[(val >> valb) & 0x3F]);
+            valb -= 6;
+        }
+    }
+    if (valb > -6) {
+        encoded.push_back(BASE64_CHARS[((val << 8) >> (valb + 8)) & 0x3F]);
+    }
+    while (encoded.size() % 4) {
+        encoded.push_back('=');
+    }
+
+    for (auto &ch : encoded) {
+        if (ch == '+') {
+            ch = '-';
+        } else if (ch == '/') {
+            ch = '_';
+        }
+    }
+
+    while (!encoded.empty() && encoded.back() == '=') {
+        encoded.pop_back();
+    }
+
+    return encoded;
+}
+
 static SharePointFileInfo GetFileInfo(
     const std::string &url,
     const std::string &token) {
@@ -109,24 +205,20 @@ static SharePointFileInfo GetFileInfo(
     duckdb_yyjson::yyjson_doc_free(site_doc);
 
     // Extract filename from URL
-    size_t last_slash = url.find_last_of('/');
-    if (last_slash != std::string::npos) {
-        info.filename = url.substr(last_slash + 1);
-        
-        // URL decode the filename if needed
-        std::string decoded;
-        for (size_t i = 0; i < info.filename.length(); ++i) {
-            if (info.filename[i] == '%' && i + 2 < info.filename.length()) {
-                std::string hex = info.filename.substr(i + 1, 2);
-                char ch = static_cast<char>(std::stoi(hex, nullptr, 16));
-                decoded += ch;
-                i += 2;
+    // For SharePoint Doc.aspx links, prefer the explicit ?file=... query parameter.
+    info.filename = GetQueryParameter(url, "file");
+    if (info.filename.empty()) {
+        size_t last_slash = url.find_last_of('/');
+        if (last_slash != std::string::npos) {
+            size_t query_pos = url.find('?', last_slash + 1);
+            if (query_pos == std::string::npos) {
+                info.filename = UrlDecode(url.substr(last_slash + 1));
             } else {
-                decoded += info.filename[i];
+                info.filename = UrlDecode(url.substr(last_slash + 1, query_pos - (last_slash + 1)));
             }
         }
-        info.filename = decoded;
-    } else {
+    }
+    if (info.filename.empty()) {
         info.filename = "file.xlsx";
     }
 
@@ -140,24 +232,54 @@ static SharePointFileInfo GetFileInfo(
     }
 
     if (docs_pos == std::string::npos) {
-        throw InvalidInputException("Could not parse file path from URL. Expected /Documents/ or /Shared Documents/ in path.");
+        // Fallback for SharePoint sharing links (e.g. /_layouts/15/Doc.aspx?...).
+        // Graph can resolve these URLs directly through /shares/{encodedUrl}/driveItem.
+        std::string encoded_url = Base64UrlEncode(url);
+
+        std::ostringstream shared_item_path;
+        shared_item_path << "/v1.0/shares/u!" << encoded_url << "/driveItem";
+
+        std::string shared_item_response = PerformHttpsRequest(
+            "graph.microsoft.com",
+            shared_item_path.str(),
+            token,
+            HttpMethod::GET
+        );
+
+        auto shared_doc = duckdb_yyjson::yyjson_read(shared_item_response.c_str(), shared_item_response.length(), 0);
+        if (!shared_doc) {
+            throw IOException("Failed to parse driveItem response from sharing URL");
+        }
+
+        auto shared_root = duckdb_yyjson::yyjson_doc_get_root(shared_doc);
+        auto item_id_val = duckdb_yyjson::yyjson_obj_get(shared_root, "id");
+        auto parent_ref = duckdb_yyjson::yyjson_obj_get(shared_root, "parentReference");
+        auto drive_id_val = parent_ref ? duckdb_yyjson::yyjson_obj_get(parent_ref, "driveId") : nullptr;
+        auto site_id_val = parent_ref ? duckdb_yyjson::yyjson_obj_get(parent_ref, "siteId") : nullptr;
+
+        if (!item_id_val || !drive_id_val) {
+            duckdb_yyjson::yyjson_doc_free(shared_doc);
+            throw InvalidInputException(
+                "Could not resolve SharePoint sharing URL to a drive item. "
+                "Please use a direct file URL or a valid sharing URL."
+            );
+        }
+
+        info.item_id = duckdb_yyjson::yyjson_get_str(item_id_val);
+        info.drive_id = duckdb_yyjson::yyjson_get_str(drive_id_val);
+        if (site_id_val) {
+            info.site_id = duckdb_yyjson::yyjson_get_str(site_id_val);
+        }
+
+        duckdb_yyjson::yyjson_doc_free(shared_doc);
+        return info;
     }
 
     // Get the relative path to the file
     std::string file_path_part = url.substr(docs_pos);
     
     // URL decode the path
-    std::string file_path;
-    for (size_t i = 0; i < file_path_part.length(); ++i) {
-        if (file_path_part[i] == '%' && i + 2 < file_path_part.length()) {
-            std::string hex = file_path_part.substr(i + 1, 2);
-            char ch = static_cast<char>(std::stoi(hex, nullptr, 16));
-            file_path += ch;
-            i += 2;
-        } else {
-            file_path += file_path_part[i];
-        }
-    }
+    std::string file_path = UrlDecode(file_path_part);
 
     // Get drives
     std::ostringstream drives_path;
@@ -296,6 +418,24 @@ static void SharepointDownloadExcelScalar(DataChunk &args, ExpressionState &stat
             );
         } catch (const std::exception &e) {
             throw IOException("Failed to download Excel file from SharePoint: " + std::string(e.what()));
+        }
+
+        if (content.empty()) {
+            throw IOException(
+                "Downloaded file is empty. SharePoint may have returned an empty redirect response or the file content could not be retrieved."
+            );
+        }
+
+        if (!LooksLikeZipArchive(content)) {
+            std::ostringstream error;
+            error << "Downloaded file is not a valid XLSX/XLSM ZIP archive. First bytes:";
+            auto preview_length = std::min<idx_t>(content.size(), 8);
+            for (idx_t j = 0; j < preview_length; j++) {
+                error << " "
+                      << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
+                      << static_cast<int>(static_cast<unsigned char>(content[j]));
+            }
+            throw IOException(error.str());
         }
 
         // Write to file

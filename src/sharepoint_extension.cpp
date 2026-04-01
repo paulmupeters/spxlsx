@@ -16,7 +16,7 @@ namespace duckdb {
 // Define read_sharepoint_excel as a table macro wrapping sharepoint_download_excel + read_xlsx
 static const DefaultTableMacro sharepoint_table_macros[] = {
     {DEFAULT_SCHEMA, "read_sharepoint_excel", {"url", nullptr},
-     {{"sheet", "NULL"}, {"header", "NULL"}, {"all_varchar", "NULL"}, {"ignore_errors", "NULL"}, {nullptr, nullptr}},
+     {{"sheet", "''"}, {"header", "true"}, {"all_varchar", "false"}, {"ignore_errors", "false"}, {nullptr, nullptr}},
      R"(SELECT * FROM read_xlsx(sharepoint_download_excel(url), sheet := sheet, header := header, all_varchar := all_varchar, ignore_errors := ignore_errors))"},
     {nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}
 };

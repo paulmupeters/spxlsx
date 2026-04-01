@@ -4,13 +4,13 @@
 
 require sharepoint
 
-# Note: This test requires the spatial extension for Excel support
-# Load it if available
-statement maybe
-INSTALL excel;
-
-statement maybe
-LOAD excel;
+# Test that loading sharepoint also loads excel, making read_xlsx available.
+query I
+SELECT COUNT(*)
+FROM duckdb_functions()
+WHERE function_name = 'read_xlsx';
+----
+1
 
 # Test that the download function is registered
 query I
