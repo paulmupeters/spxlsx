@@ -102,6 +102,13 @@ LOAD sharepoint;
 - `header := ...`
 - `all_varchar := ...`
 - `ignore_errors := ...`
+- `range := ...`
+- `stop_at_empty := ...`
+- `empty_as_varchar := ...`
+
+By default, `ignore_errors := true` so mixed-type outliers in otherwise sparse columns are coerced to `NULL` instead of aborting the read. Use `ignore_errors := false` when you want strict parsing.
+
+Selecting only a subset of output columns does not guarantee that the underlying Excel reader will skip other sheet columns during parsing. If unused columns contain problematic cells, narrow the workbook region explicitly with `range := ...`.
 
 Then run:
 
@@ -116,7 +123,7 @@ LIMIT 10;
 
 ### Advanced path: `sharepoint_download_excel` + `read_xlsx`
 
-Use this when you need `read_xlsx` options that are not exposed by the macro (for example `range`, `stop_at_empty`, `empty_as_varchar`):
+Use this when you need `read_xlsx` options or behavior beyond the macro surface:
 
 ```sql
 SELECT *

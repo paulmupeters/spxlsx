@@ -14,13 +14,22 @@ WHERE function_name = 'read_xlsx';
 
 # Test that the download function is registered
 query I
-SELECT 1;
+SELECT COUNT(*)
+FROM duckdb_functions()
+WHERE function_name = 'sharepoint_download_excel';
 ----
 1
 
 # Test that the macro is registered
 query I
-SELECT 1;
+SELECT COUNT(*)
+FROM duckdb_functions()
+WHERE function_name = 'read_sharepoint_excel'
+	AND macro_definition LIKE '%sharepoint_download_excel(url)%'
+	AND list_contains(parameters, 'ignore_errors')
+	AND list_contains(parameters, 'range')
+	AND list_contains(parameters, 'stop_at_empty')
+	AND list_contains(parameters, 'empty_as_varchar');
 ----
 1
 
@@ -48,6 +57,11 @@ SELECT 1;
 # ----
 # true
 
+# Test strict mode
+# statement error
+# SELECT COUNT(*)
+# FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}', ignore_errors := false);
+
 # Test reading specific sheet
 # query I
 # SELECT COUNT(*) >= 0
@@ -59,6 +73,13 @@ SELECT 1;
 # query I
 # SELECT COUNT(*) >= 0
 # FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}', range := 'A1:E10');
+# ----
+# true
+
+# Test preserving mixed types as text
+# query I
+# SELECT COUNT(*) >= 0
+# FROM read_sharepoint_excel('${SHAREPOINT_EXCEL_URL}', all_varchar := true);
 # ----
 # true
 

@@ -40,7 +40,27 @@ SELECT * FROM read_sharepoint_excel(
     sheet := 'Current',
     header := true,
     all_varchar := false,
-    ignore_errors := true
+    ignore_errors := true,
+    stop_at_empty := true
+);
+
+-- Example: Strict mode if you want mixed-type cells to fail the query
+SELECT * FROM read_sharepoint_excel(
+    'https://contoso.sharepoint.com/sites/HR/Documents/Employees.xlsx',
+    ignore_errors := false
+);
+
+-- Example: Preserve mixed-type columns as text
+SELECT * FROM read_sharepoint_excel(
+    'https://contoso.sharepoint.com/sites/HR/Documents/Employees.xlsx',
+    all_varchar := true
+);
+
+-- Example: Narrow the workbook region when only a subset of columns is needed
+SELECT email, name
+FROM read_sharepoint_excel(
+    'https://contoso.sharepoint.com/sites/HR/Documents/Employees.xlsx',
+    range := 'A1:B500'
 );
 
 -- Example: Aggregate data from multiple Excel files
@@ -56,12 +76,12 @@ SELECT
     COUNT(*) AS transaction_count
 FROM read_sharepoint_excel('https://contoso.sharepoint.com/.../Q2_2024.xlsx');
 
--- Example: Using the scalar function directly with read_xlsx for extra options
--- (e.g. range, stop_at_empty, empty_as_varchar not exposed via the macro)
+-- Example: Using the scalar function directly with read_xlsx for fully custom options
 SELECT * FROM read_xlsx(
     (SELECT sharepoint_download_excel(
         'https://contoso.sharepoint.com/sites/Finance/Documents/Report.xlsx'
     )),
     sheet := 'Summary',
-    range := 'A1:F100'
+    range := 'A1:F100',
+    empty_as_varchar := true
 );
