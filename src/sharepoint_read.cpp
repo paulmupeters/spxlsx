@@ -169,7 +169,7 @@ static unique_ptr<FunctionData> SharepointReadBind(
     
     // 1. Parse input URL
     if (input.inputs.empty()) {
-        throw InvalidInputException("read_sharepoint requires a SharePoint list URL");
+        throw InvalidInputException("read_sharepoint_list requires a SharePoint list URL");
     }
     std::string url = input.inputs[0].ToString();
     
@@ -440,22 +440,25 @@ static void SharepointReadFunction(
 // Register Function
 // ============================================================================
 
-void RegisterSharepointReadFunction(ExtensionLoader &loader) {
-    // Create table function
-    TableFunction read_sharepoint_func(
-        "read_sharepoint",                     // Function name
+static TableFunction CreateSharepointListFunction(const std::string &function_name) {
+    TableFunction sharepoint_list_func(
+        function_name,                        // Function name
         {LogicalType::VARCHAR},                // Input: URL string
         SharepointReadFunction,                // Execution function
         SharepointReadBind,                    // Bind function
         SharepointReadInit                     // Init function (creates global state)
     );
-    
-    // Optional parameters
-    read_sharepoint_func.named_parameters["filter"] = LogicalType::VARCHAR;
-    read_sharepoint_func.named_parameters["top"] = LogicalType::INTEGER;
-    
-    // Register with DuckDB
-    loader.RegisterFunction(read_sharepoint_func);
+
+    sharepoint_list_func.named_parameters["filter"] = LogicalType::VARCHAR;
+    sharepoint_list_func.named_parameters["top"] = LogicalType::INTEGER;
+
+    return sharepoint_list_func;
+}
+
+void RegisterSharepointReadFunction(ExtensionLoader &loader) {
+    // Register the canonical name first, then keep the legacy alias for compatibility.
+    loader.RegisterFunction(CreateSharepointListFunction("read_sharepoint_list"));
+    loader.RegisterFunction(CreateSharepointListFunction("read_sharepoint"));
 }
 
 } // namespace duckdb

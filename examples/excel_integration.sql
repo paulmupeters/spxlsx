@@ -28,7 +28,7 @@ SELECT
     l.Title,
     e.Value,
     e.Category
-FROM read_sharepoint('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects') l
+FROM read_sharepoint_list('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects') l
 JOIN read_sharepoint_excel(
     'https://contoso.sharepoint.com/sites/MyTeam/Documents/ProjectData.xlsx',
     sheet := 'Financials'

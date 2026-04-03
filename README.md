@@ -4,7 +4,7 @@ DuckDB extension for querying SharePoint data directly from SQL.
 
 ## What this extension provides
 
-- `read_sharepoint(url, ...)` table function to read SharePoint Lists
+- `read_sharepoint_list(url, ...)` table function to read SharePoint Lists
 - `sharepoint_download_excel(url)` scalar function to download a SharePoint Excel file to a local temp file
 - `read_sharepoint_excel(url, ...)` built-in table macro that combines `sharepoint_download_excel(...)` + DuckDB `read_xlsx(...)`
 - SharePoint authentication through DuckDB secrets (`PROVIDER oauth` and `PROVIDER token`)
@@ -44,11 +44,11 @@ CREATE SECRET (TYPE sharepoint, PROVIDER token, TOKEN 'your-access-token');
 
 ## Reading SharePoint Lists
 
-`read_sharepoint` expects a SharePoint list URL, for example:
+`read_sharepoint_list` expects a SharePoint list URL, for example:
 
 ```sql
 SELECT *
-FROM read_sharepoint('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects')
+FROM read_sharepoint_list('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects')
 LIMIT 10;
 ```
 
@@ -61,7 +61,7 @@ Example:
 
 ```sql
 SELECT ID, Title, Created
-FROM read_sharepoint(
+FROM read_sharepoint_list(
    'https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects',
    filter := 'Status eq ''Active''',
    top := 100
@@ -143,7 +143,7 @@ SELECT
    l.Title,
    e.Value,
    e.Category
-FROM read_sharepoint('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects') l
+FROM read_sharepoint_list('https://contoso.sharepoint.com/sites/MyTeam/Lists/Projects') l
 JOIN read_sharepoint_excel(
    'https://contoso.sharepoint.com/sites/MyTeam/Documents/ProjectData.xlsx',
    sheet := 'Financials'
