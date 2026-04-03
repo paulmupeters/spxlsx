@@ -160,6 +160,5 @@ make test
 
 ## Additional docs
 
-- Excel usage notes and troubleshooting: `docs/EXCEL_INTEGRATION.md`
-- Step-by-step tutorial: `tutorial/README.md`
 - Example SQL script: `examples/excel_integration.sql`
+- Update procedure notes: `docs/UPDATING.md`
