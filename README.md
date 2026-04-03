@@ -71,12 +71,27 @@ ORDER BY Created DESC;
 
 ## Reading Excel files from SharePoint
 
-Load both extensions first:
+Load the SharePoint extension:
 
 ```sql
 LOAD sharepoint;
-INSTALL excel;  -- one-time install
-LOAD excel;
+```
+
+`LOAD sharepoint` now attempts to load DuckDB's `excel` extension automatically so `read_sharepoint_excel(...)` and `read_xlsx(...)` are available immediately.
+
+If you are using an external DuckDB shell and `excel` has never been installed on that machine, install it once first:
+
+```sql
+INSTALL excel;
+LOAD sharepoint;
+```
+
+Or enable DuckDB's automatic install/load path:
+
+```sql
+SET autoinstall_known_extensions = 1;
+SET autoload_known_extensions = 1;
+LOAD sharepoint;
 ```
 
 ### Fast path: `read_sharepoint_excel`
@@ -88,7 +103,7 @@ LOAD excel;
 - `all_varchar := ...`
 - `ignore_errors := ...`
 
-load the excel extension first, then
+Then run:
 
 ```sql
 SELECT *

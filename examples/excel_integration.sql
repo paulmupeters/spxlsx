@@ -1,10 +1,15 @@
 -- Example: Using SharePoint Excel Integration
 -- This example shows how to query Excel files from SharePoint
 
--- Step 1: Load required extensions
+-- Step 1: Load the SharePoint extension
 LOAD sharepoint;
-INSTALL excel;  -- Only needed first time
-LOAD excel;
+
+-- If excel has never been installed in this DuckDB environment, run this once first:
+-- INSTALL excel;
+
+-- Or enable DuckDB's automatic install/load path before LOAD sharepoint:
+-- SET autoinstall_known_extensions = 1;
+-- SET autoload_known_extensions = 1;
 
 -- Step 2: Authenticate with SharePoint
 CREATE SECRET (TYPE sharepoint, PROVIDER oauth);

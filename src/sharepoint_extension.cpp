@@ -7,6 +7,7 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/catalog/default/default_table_functions.hpp"
+#include "duckdb/main/extension_helper.hpp"
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -26,6 +27,8 @@ static void LoadInternal(ExtensionLoader &loader) {
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
+
+    ExtensionHelper::AutoLoadExtension(loader.GetDatabaseInstance(), "excel");
 
     // Register authentication functions
     RegisterSharepointAuthFunctions(loader);
