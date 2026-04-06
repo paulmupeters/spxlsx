@@ -1,6 +1,6 @@
 # name: test/sql/sharepoint_excel.test
 # description: Test SharePoint Excel integration
-# group: [sharepoint]
+# group: [sql]
 
 require sharepoint
 

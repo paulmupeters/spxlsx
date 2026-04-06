@@ -16,7 +16,9 @@ namespace duckdb {
 
 // Define read_sharepoint_excel as a table macro wrapping sharepoint_download_excel + read_xlsx
 static const DefaultTableMacro sharepoint_table_macros[] = {
-    {DEFAULT_SCHEMA, "read_sharepoint_excel", {"url", nullptr},
+    {DEFAULT_SCHEMA,
+     "read_sharepoint_excel",
+     {"url", nullptr},
      {{"sheet", "''"},
       {"header", "true"},
       {"all_varchar", "false"},
@@ -36,47 +38,46 @@ static const DefaultTableMacro sharepoint_table_macros[] = {
             stop_at_empty := stop_at_empty,
             empty_as_varchar := empty_as_varchar
         ))"},
-    {nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}
-};
+    {nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}};
 
 static void LoadInternal(ExtensionLoader &loader) {
-    // Initialize OpenSSL (required for HTTPS)
-    SSL_library_init();
-    SSL_load_error_strings();
-    OpenSSL_add_all_algorithms();
+	// Initialize OpenSSL (required for HTTPS)
+	SSL_library_init();
+	SSL_load_error_strings();
+	OpenSSL_add_all_algorithms();
 
-    ExtensionHelper::AutoLoadExtension(loader.GetDatabaseInstance(), "excel");
+	ExtensionHelper::AutoLoadExtension(loader.GetDatabaseInstance(), "excel");
 
-    // Register authentication functions
-    RegisterSharepointAuthFunctions(loader);
+	// Register authentication functions
+	RegisterSharepointAuthFunctions(loader);
 
-    // Register table functions
-    RegisterSharepointReadFunction(loader);
-    
-    // Register Excel integration scalar function (sharepoint_download_excel)
-    RegisterSharepointExcelFunction(loader);
-    
-    // Register table macros (read_sharepoint_excel)
-    for (idx_t index = 0; sharepoint_table_macros[index].name != nullptr; index++) {
-        auto info = DefaultTableFunctionGenerator::CreateTableMacroInfo(sharepoint_table_macros[index]);
-        loader.RegisterFunction(*info);
-    }
+	// Register table functions
+	RegisterSharepointReadFunction(loader);
+
+	// Register Excel integration scalar function (sharepoint_download_excel)
+	RegisterSharepointExcelFunction(loader);
+
+	// Register table macros (read_sharepoint_excel)
+	for (idx_t index = 0; sharepoint_table_macros[index].name != nullptr; index++) {
+		auto info = DefaultTableFunctionGenerator::CreateTableMacroInfo(sharepoint_table_macros[index]);
+		loader.RegisterFunction(*info);
+	}
 }
 
 void SharepointExtension::Load(ExtensionLoader &loader) {
-    LoadInternal(loader);
+	LoadInternal(loader);
 }
 
 std::string SharepointExtension::Name() {
-    return "sharepoint";
+	return "sharepoint";
 }
 
 std::string SharepointExtension::Version() const {
-    #ifdef EXT_VERSION_SHAREPOINT
-        return EXT_VERSION_SHAREPOINT;
-    #else
-        return "";
-    #endif
+#ifdef EXT_VERSION_SHAREPOINT
+	return EXT_VERSION_SHAREPOINT;
+#else
+	return "";
+#endif
 }
 
 } // namespace duckdb
@@ -85,7 +86,6 @@ std::string SharepointExtension::Version() const {
 extern "C" {
 
 DUCKDB_CPP_EXTENSION_ENTRY(sharepoint, loader) {
-    duckdb::LoadInternal(loader);
+	duckdb::LoadInternal(loader);
 }
-
 }
