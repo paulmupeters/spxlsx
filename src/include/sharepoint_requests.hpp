@@ -5,7 +5,7 @@
 namespace duckdb {
 
 // HTTP request methods
-enum class HttpMethod { GET, POST, PUT, DELETE };
+enum class HttpMethod { GET, POST, PUT, DELETE_REQUEST };
 
 // Perform HTTPS request to SharePoint/Graph API
 std::string PerformHttpsRequest(const std::string &host, const std::string &path, const std::string &token,

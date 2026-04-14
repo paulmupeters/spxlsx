@@ -150,8 +150,8 @@ static SharepointRefreshTokenResult RefreshAccessToken(const std::string &refres
 	const auto body = BuildRefreshTokenRequestBody(refresh_token);
 
 	try {
-		const auto response = PerformHttpsRequest("login.microsoftonline.com", token_endpoint,
-		                                          "", HttpMethod::POST, body, "application/x-www-form-urlencoded");
+		const auto response = PerformHttpsRequest("login.microsoftonline.com", token_endpoint, "", HttpMethod::POST,
+		                                          body, "application/x-www-form-urlencoded");
 		return ParseRefreshTokenResponse(response, refresh_token, std::chrono::system_clock::now());
 	} catch (const std::exception &ex) {
 		auto error_body = ExtractHttpErrorBody(ex);
@@ -179,8 +179,8 @@ static std::string RefreshAndPersistAccessToken(ClientContext &context, const Ke
                                                 const SecretMatch &secret_match, const std::string &refresh_token) {
 	auto refreshed = RefreshAccessToken(refresh_token);
 
-	auto refreshed_secret =
-	    make_uniq<KeyValueSecret>(kv_secret.GetScope(), kv_secret.GetType(), kv_secret.GetProvider(), kv_secret.GetName());
+	auto refreshed_secret = make_uniq<KeyValueSecret>(kv_secret.GetScope(), kv_secret.GetType(),
+	                                                  kv_secret.GetProvider(), kv_secret.GetName());
 	refreshed_secret->secret_map = kv_secret.secret_map;
 	refreshed_secret->secret_map["access_token"] = refreshed.access_token;
 	refreshed_secret->secret_map["refresh_token"] = refreshed.refresh_token;

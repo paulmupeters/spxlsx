@@ -16,8 +16,8 @@ static void TestRefreshBodyEncoding() {
 
 static void TestRefreshResponseKeepsExistingRefreshTokenWhenRotatedTokenMissing() {
 	const auto now = std::chrono::system_clock::from_time_t(1700000000);
-	const auto refreshed = ParseRefreshTokenResponse(
-	    R"({"access_token":"new-access","expires_in":7200})", "existing-refresh", now);
+	const auto refreshed =
+	    ParseRefreshTokenResponse(R"({"access_token":"new-access","expires_in":7200})", "existing-refresh", now);
 
 	assert(refreshed.access_token == "new-access");
 	assert(refreshed.refresh_token == "existing-refresh");

@@ -34,8 +34,7 @@ static std::string UrlEncode(const std::string &value) {
 std::string BuildRefreshTokenRequestBody(const std::string &refresh_token) {
 	std::ostringstream body;
 	body << "grant_type=refresh_token"
-	     << "&client_id=" << CLIENT_ID
-	     << "&scope=" << UrlEncode(SCOPES)
+	     << "&client_id=" << CLIENT_ID << "&scope=" << UrlEncode(SCOPES)
 	     << "&refresh_token=" << UrlEncode(refresh_token);
 	return body.str();
 }
@@ -46,7 +45,8 @@ SharepointRefreshTokenResult ParseRefreshTokenResponse(const std::string &respon
 	const auto response = json::parse(response_body);
 
 	const auto access_token_it = response.find("access_token");
-	if (access_token_it == response.end() || !access_token_it->is_string() || access_token_it->get<std::string>().empty()) {
+	if (access_token_it == response.end() || !access_token_it->is_string() ||
+	    access_token_it->get<std::string>().empty()) {
 		throw std::runtime_error("Refresh token response did not include an access_token.");
 	}
 
@@ -63,8 +63,7 @@ SharepointRefreshTokenResult ParseRefreshTokenResponse(const std::string &respon
 	SharepointRefreshTokenResult result;
 	result.access_token = access_token_it->get<std::string>();
 	result.refresh_token = response.value("refresh_token", existing_refresh_token);
-	result.expires_at =
-	    std::chrono::system_clock::to_time_t(now + std::chrono::seconds(expires_in));
+	result.expires_at = std::chrono::system_clock::to_time_t(now + std::chrono::seconds(expires_in));
 	return result;
 }
 

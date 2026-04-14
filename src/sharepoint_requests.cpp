@@ -326,7 +326,7 @@ static std::string PerformHttpsRequestInternal(const std::string &host, const st
 			case HttpMethod::PUT:
 				request << "PUT ";
 				break;
-			case HttpMethod::DELETE:
+			case HttpMethod::DELETE_REQUEST:
 				request << "DELETE ";
 				break;
 			}
