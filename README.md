@@ -2,6 +2,9 @@
 
 DuckDB extension for querying SharePoint data directly from SQL.
 
+> [!WARNING]
+> This extension is experimental and not yet production-hardened. Expect rough edges around authentication, network behavior, and long-term compatibility while the project is still maturing.
+
 ## What this extension provides
 
 - `read_sharepoint_list(url, ...)` table function to read SharePoint Lists
@@ -41,6 +44,12 @@ Or provide an existing token:
 
 ```sql
 CREATE SECRET (TYPE sharepoint, PROVIDER token, TOKEN 'your-access-token');
+```
+
+Use Persistent for the secret to work across restarts.
+
+```sql
+CREATE PERSISTENT SECRET (TYPE sharepoint, PROVIDER oauth);
 ```
 
 ## Reading SharePoint Lists

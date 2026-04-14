@@ -1,4 +1,5 @@
 #include "sharepoint_auth.hpp"
+#include "sharepoint_oauth.hpp"
 #include "sharepoint_requests.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/secret/secret.hpp"
@@ -144,6 +145,55 @@ static json PollDeviceCodeToken(const std::string &device_code, int interval_sec
 	throw IOException("Device code expired before sign-in completed. Please run CREATE SECRET again.");
 }
 
+static SharepointRefreshTokenResult RefreshAccessToken(const std::string &refresh_token) {
+	const std::string token_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/token";
+	const auto body = BuildRefreshTokenRequestBody(refresh_token);
+
+	try {
+		const auto response = PerformHttpsRequest("login.microsoftonline.com", token_endpoint,
+		                                          "", HttpMethod::POST, body, "application/x-www-form-urlencoded");
+		return ParseRefreshTokenResponse(response, refresh_token, std::chrono::system_clock::now());
+	} catch (const std::exception &ex) {
+		auto error_body = ExtractHttpErrorBody(ex);
+		if (error_body.empty()) {
+			throw IOException("Failed to refresh SharePoint access token: " + std::string(ex.what()));
+		}
+
+		auto error_response = ParseJsonResponse(error_body, "refresh token error");
+		auto error = error_response.value("error", "");
+		auto error_description = error_response.value("error_description", "");
+		if (error == "invalid_grant") {
+			throw IOException("Refresh token is no longer valid. Please run CREATE SECRET again.");
+		}
+		if (!error_description.empty()) {
+			throw IOException("Failed to refresh SharePoint access token: " + error_description);
+		}
+		if (!error.empty()) {
+			throw IOException("Failed to refresh SharePoint access token: " + error);
+		}
+		throw IOException("Failed to refresh SharePoint access token.");
+	}
+}
+
+static std::string RefreshAndPersistAccessToken(ClientContext &context, const KeyValueSecret &kv_secret,
+                                                const SecretMatch &secret_match, const std::string &refresh_token) {
+	auto refreshed = RefreshAccessToken(refresh_token);
+
+	auto refreshed_secret =
+	    make_uniq<KeyValueSecret>(kv_secret.GetScope(), kv_secret.GetType(), kv_secret.GetProvider(), kv_secret.GetName());
+	refreshed_secret->secret_map = kv_secret.secret_map;
+	refreshed_secret->secret_map["access_token"] = refreshed.access_token;
+	refreshed_secret->secret_map["refresh_token"] = refreshed.refresh_token;
+	refreshed_secret->secret_map["expires_at"] = std::to_string(refreshed.expires_at);
+
+	auto &secret_manager = SecretManager::Get(context);
+	auto transaction = CatalogTransaction::GetSystemCatalogTransaction(context);
+	secret_manager.RegisterSecret(transaction, std::move(refreshed_secret), OnCreateConflict::REPLACE_ON_CONFLICT,
+	                              secret_match.secret_entry->persist_type, secret_match.secret_entry->storage_mode);
+
+	return refreshed.access_token;
+}
+
 // Create secret from OAuth flow
 static unique_ptr<BaseSecret> CreateSharepointSecretFromOAuth(ClientContext &context, CreateSecretInput &input) {
 	std::cout << "\n= SharePoint Device Code Authentication =\n\n";
@@ -257,8 +307,10 @@ std::string SharepointAuth::GetAccessToken(ClientContext &context) {
 			auto refresh_it = kv_secret->secret_map.find("refresh_token");
 			if (refresh_it != kv_secret->secret_map.end()) {
 				std::string refresh_token = refresh_it->second.ToString();
-				// TODO: Implement token refresh
-				throw IOException("Token expired. Please re-authenticate.");
+				if (refresh_token.empty()) {
+					throw IOException("Token expired and no refresh token available. Please re-authenticate.");
+				}
+				return RefreshAndPersistAccessToken(context, *kv_secret, secret_match, refresh_token);
 			} else {
 				throw IOException("Token expired and no refresh token available. Please re-authenticate.");
 			}

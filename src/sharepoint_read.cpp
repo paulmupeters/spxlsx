@@ -258,12 +258,9 @@ static void SharepointReadFunction(ClientContext &context, TableFunctionInput &d
 
 	// Lazy load: fetch data on first execution or when we need next page
 	if (state.response_json.empty()) {
-		std::cerr << "[DEBUG] Fetching list items..." << std::endl;
 		state.response_json = CallGraphApiListItems(bind_data.site_id, bind_data.list_id, bind_data.token,
 		                                            "", // select all fields
 		                                            bind_data.filter, bind_data.top);
-		std::cerr << "[DEBUG] List items response (first 500 chars): " << state.response_json.substr(0, 500)
-		          << std::endl;
 		state.row_index = 0;
 	}
 

@@ -318,6 +318,10 @@ static SharePointFileInfo GetFileInfo(const std::string &url, const std::string 
 
 // Scalar function: Download Excel file and return temp path
 static void SharepointDownloadExcelScalar(DataChunk &args, ExpressionState &state, Vector &result) {
+	result.SetVectorType(VectorType::FLAT_VECTOR);
+	auto &result_validity = FlatVector::Validity(result);
+	result_validity.SetAllValid(args.size());
+
 	auto &url_vector = args.data[0];
 	UnifiedVectorFormat url_data;
 	url_vector.ToUnifiedFormat(args.size(), url_data);
@@ -328,7 +332,7 @@ static void SharepointDownloadExcelScalar(DataChunk &args, ExpressionState &stat
 		auto idx = url_data.sel->get_index(i);
 
 		if (!url_data.validity.RowIsValid(idx)) {
-			FlatVector::SetNull(result, i, true);
+			result_validity.SetInvalid(i);
 			continue;
 		}
 
@@ -444,6 +448,9 @@ static ExcelCleanup global_cleanup;
 void RegisterSharepointExcelFunction(ExtensionLoader &loader) {
 	ScalarFunction download_func("sharepoint_download_excel", {LogicalType::VARCHAR}, LogicalType::VARCHAR,
 	                             SharepointDownloadExcelScalar);
+	download_func.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
+	download_func.SetFallible();
+	download_func.SetVolatile();
 
 	loader.RegisterFunction(download_func);
 }

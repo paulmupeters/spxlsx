@@ -14,6 +14,22 @@
 
 namespace duckdb {
 
+static constexpr const char *MISSING_EXCEL_ERROR =
+    "read_sharepoint_excel requires the DuckDB excel extension. Run INSTALL excel; LOAD excel; or enable "
+    "autoinstall/autoload known extensions.";
+
+static void SharepointRequireExcelScalar(DataChunk &args, ExpressionState &state, Vector &result) {
+	(void)args;
+	auto &db = *state.GetContext().db;
+	if (!db.ExtensionIsLoaded("excel")) {
+		ExtensionHelper::TryAutoLoadAvailableExtension(db, "excel");
+	}
+	if (!db.ExtensionIsLoaded("excel")) {
+		throw InvalidInputException(MISSING_EXCEL_ERROR);
+	}
+	result.Reference(Value::BOOLEAN(true));
+}
+
 // Define read_sharepoint_excel as a table macro wrapping sharepoint_download_excel + read_xlsx
 static const DefaultTableMacro sharepoint_table_macros[] = {
     {DEFAULT_SCHEMA,
@@ -28,15 +44,35 @@ static const DefaultTableMacro sharepoint_table_macros[] = {
       {"empty_as_varchar", "NULL"},
       {nullptr, nullptr}},
      R"(SELECT *
-        FROM read_xlsx(
-            sharepoint_download_excel(url),
-            sheet := sheet,
-            header := header,
-            all_varchar := all_varchar,
-            ignore_errors := ignore_errors,
-            range := range,
-            stop_at_empty := stop_at_empty,
-            empty_as_varchar := empty_as_varchar
+        FROM query(
+            CASE
+                WHEN __sharepoint_require_excel() THEN
+                    'SELECT * FROM read_xlsx(''' ||
+                    replace(sharepoint_download_excel(url), '''', '''''') ||
+                    '''' ||
+                    CASE
+                        WHEN sheet IS NULL OR sheet = '' THEN ''
+                        ELSE ', sheet := ''' || replace(sheet, '''', '''''') || ''''
+                    END ||
+                    ', header := ' || CASE WHEN header THEN 'true' ELSE 'false' END ||
+                    ', all_varchar := ' || CASE WHEN all_varchar THEN 'true' ELSE 'false' END ||
+                    ', ignore_errors := ' || CASE WHEN ignore_errors THEN 'true' ELSE 'false' END ||
+                    CASE
+                        WHEN range IS NULL THEN ''
+                        ELSE ', range := ''' || replace(range, '''', '''''') || ''''
+                    END ||
+                    CASE
+                        WHEN stop_at_empty IS NULL THEN ''
+                        ELSE ', stop_at_empty := ' || CASE WHEN stop_at_empty THEN 'true' ELSE 'false' END
+                    END ||
+                    CASE
+                        WHEN empty_as_varchar IS NULL THEN ''
+                        ELSE ', empty_as_varchar := ' || CASE WHEN empty_as_varchar THEN 'true' ELSE 'false' END
+                    END ||
+                    ')'
+                ELSE
+                    'SELECT 1 WHERE FALSE'
+            END
         ))"},
     {nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}};
 
@@ -46,13 +82,25 @@ static void LoadInternal(ExtensionLoader &loader) {
 	SSL_load_error_strings();
 	OpenSSL_add_all_algorithms();
 
-	ExtensionHelper::AutoLoadExtension(loader.GetDatabaseInstance(), "excel");
+	// Excel powers read_sharepoint_excel, but sharepoint itself should still load if excel is not installed yet.
+	// Try loading excel only when it is already available locally.
+	if (!ExtensionHelper::TryAutoLoadAvailableExtension(loader.GetDatabaseInstance(), "excel")) {
+		DUCKDB_LOG_WARNING(loader.GetDatabaseInstance(),
+		                   "Could not load optional dependency 'excel'; Excel table functions will remain "
+		                   "unavailable until it is installed");
+	}
 
 	// Register authentication functions
 	RegisterSharepointAuthFunctions(loader);
 
 	// Register table functions
 	RegisterSharepointReadFunction(loader);
+
+	// Guard used by read_sharepoint_excel to provide a clear message when excel is missing.
+	ScalarFunction require_excel_func("__sharepoint_require_excel", {}, LogicalType::BOOLEAN,
+	                                  SharepointRequireExcelScalar);
+	require_excel_func.SetVolatile();
+	loader.RegisterFunction(require_excel_func);
 
 	// Register Excel integration scalar function (sharepoint_download_excel)
 	RegisterSharepointExcelFunction(loader);

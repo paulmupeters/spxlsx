@@ -4,13 +4,9 @@
 
 require sharepoint
 
-# Test that loading sharepoint also loads excel, making read_xlsx available.
-query I
-SELECT COUNT(*)
-FROM duckdb_functions()
-WHERE function_name = 'read_xlsx';
-----
-1
+# Loading sharepoint should not require excel to already be installed on the system.
+statement ok
+LOAD sharepoint;
 
 # Test that the download function is registered
 query I
@@ -26,6 +22,7 @@ SELECT COUNT(*)
 FROM duckdb_functions()
 WHERE function_name = 'read_sharepoint_excel'
 	AND macro_definition LIKE '%sharepoint_download_excel(url)%'
+	AND macro_definition NOT LIKE '%duckdb_functions()%'
 	AND list_contains(parameters, 'ignore_errors')
 	AND list_contains(parameters, 'range')
 	AND list_contains(parameters, 'stop_at_empty')

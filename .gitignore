@@ -9,3 +9,4 @@ test/python/__pycache__/
 docs/CODEBASE_REVIEW.md
 .cache/clangd/compile_commands.json
 .cache/clangd/release/compile_commands.json
+.codex

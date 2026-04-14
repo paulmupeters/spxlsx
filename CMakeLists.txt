@@ -19,6 +19,7 @@ include_directories(third_party/json/single_include)
 set(EXTENSION_SOURCES
     src/sharepoint_extension.cpp
     src/sharepoint_auth.cpp
+    src/sharepoint_oauth.cpp
     src/sharepoint_read.cpp
     src/sharepoint_requests.cpp
     src/sharepoint_utils.cpp
@@ -31,6 +32,12 @@ build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 # Link OpenSSL in both the static library as the loadable extension
 target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
 target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto)
+
+add_executable(sharepoint_auth_refresh_test
+    test/sharepoint_auth_refresh_test.cpp
+    src/sharepoint_oauth.cpp
+)
+target_link_libraries(sharepoint_auth_refresh_test OpenSSL::SSL OpenSSL::Crypto)
 
 install(
   TARGETS ${EXTENSION_NAME}
