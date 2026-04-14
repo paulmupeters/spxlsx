@@ -8,7 +8,7 @@ extension:
   maintainers:
     - paulmupeters
 repo:
-  github: paulmupeters/sharepointxlsx
+  github: paulmupeters/spxlsx
   ref: v0.1.0
 docs:
   hello_world: |
@@ -47,7 +47,7 @@ docs:
     It uses Microsoft Graph for authentication and data access, and integrates with DuckDB secrets
     so credentials can be managed with standard DuckDB workflows.
 
-    **Repository:** https://github.com/paulmupeters/sharepointxlsx
+    **Repository:** https://github.com/paulmupeters/spxlsx
 
     ## Core Features
 
