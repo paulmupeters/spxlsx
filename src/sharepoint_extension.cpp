@@ -117,12 +117,12 @@ void SharepointExtension::Load(ExtensionLoader &loader) {
 }
 
 std::string SharepointExtension::Name() {
-	return "sharepoint";
+	return "spxlsx";
 }
 
 std::string SharepointExtension::Version() const {
-#ifdef EXT_VERSION_SHAREPOINT
-	return EXT_VERSION_SHAREPOINT;
+#ifdef EXT_VERSION_SPXLSX
+	return EXT_VERSION_SPXLSX;
 #else
 	return "";
 #endif
@@ -133,7 +133,7 @@ std::string SharepointExtension::Version() const {
 // This macro creates the extension entry point
 extern "C" {
 
-DUCKDB_CPP_EXTENSION_ENTRY(sharepoint, loader) {
+DUCKDB_CPP_EXTENSION_ENTRY(spxlsx, loader) {
 	duckdb::LoadInternal(loader);
 }
 }

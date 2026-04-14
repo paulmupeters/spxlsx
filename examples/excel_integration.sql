@@ -2,12 +2,12 @@
 -- This example shows how to query Excel files from SharePoint
 
 -- Step 1: Load the SharePoint extension
-LOAD sharepoint;
+LOAD spxlsx;
 
 -- If excel has never been installed in this DuckDB environment, run this once first:
 -- INSTALL excel;
 
--- Or enable DuckDB's automatic install/load path before LOAD sharepoint:
+-- Or enable DuckDB's automatic install/load path before LOAD spxlsx:
 -- SET autoinstall_known_extensions = 1;
 -- SET autoload_known_extensions = 1;
 

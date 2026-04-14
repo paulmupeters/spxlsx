@@ -11,4 +11,4 @@ fi
 
 # Run DuckDB with extension auto-loaded
 cd duckdb
-./build/release/duckdb -c "LOAD '../build/release/extension/sharepoint/sharepoint.duckdb_extension'; SELECT 'Extension loaded successfully!' as status;"
+./build/release/duckdb -c "LOAD '../build/release/extension/spxlsx/spxlsx.duckdb_extension'; SELECT 'Extension loaded successfully!' as status;"

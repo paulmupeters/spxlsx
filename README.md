@@ -24,14 +24,14 @@ Useful build artifacts:
 
 - `./build/release/duckdb`
 - `./build/release/test/unittest`
-- `./build/release/extension/sharepoint/sharepoint.duckdb_extension`
+- `./build/release/extension/spxlsx/spxlsx.duckdb_extension`
 
 ## Load and authenticate
 
 If you use the dev shell (`./build/release/duckdb`), the extension is already linked. For a regular DuckDB shell, load the extension explicitly:
 
 ```sql
-LOAD '/absolute/path/to/build/release/extension/sharepoint/sharepoint.duckdb_extension';
+LOAD '/absolute/path/to/build/release/extension/spxlsx/spxlsx.duckdb_extension';
 ```
 
 Create a SharePoint secret (interactive OAuth flow):
@@ -84,16 +84,16 @@ ORDER BY Created DESC;
 Load the SharePoint extension:
 
 ```sql
-LOAD sharepoint;
+LOAD spxlsx;
 ```
 
-`LOAD sharepoint` now attempts to load DuckDB's `excel` extension automatically so `read_sharepoint_excel(...)` and `read_xlsx(...)` are available immediately.
+`LOAD spxlsx` now attempts to load DuckDB's `excel` extension automatically so `read_sharepoint_excel(...)` and `read_xlsx(...)` are available immediately.
 
 If you are using an external DuckDB shell and `excel` has never been installed on that machine, install it once first:
 
 ```sql
 INSTALL excel;
-LOAD sharepoint;
+LOAD spxlsx;
 ```
 
 Or enable DuckDB's automatic install/load path:
@@ -101,7 +101,7 @@ Or enable DuckDB's automatic install/load path:
 ```sql
 SET autoinstall_known_extensions = 1;
 SET autoload_known_extensions = 1;
-LOAD sharepoint;
+LOAD spxlsx;
 ```
 
 ### Fast path: `read_sharepoint_excel`

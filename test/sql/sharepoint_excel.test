@@ -2,11 +2,11 @@
 # description: Test SharePoint Excel integration
 # group: [sql]
 
-require sharepoint
+require spxlsx
 
-# Loading sharepoint should not require excel to already be installed on the system.
+# Loading spxlsx should not require excel to already be installed on the system.
 statement ok
-LOAD sharepoint;
+LOAD spxlsx;
 
 # Test that the download function is registered
 query I
