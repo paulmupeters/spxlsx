@@ -74,20 +74,21 @@ static std::string ExtractHttpErrorBody(const std::exception &ex) {
 	return message.substr(separator + 2);
 }
 
-static json RequestDeviceCode() {
+static json RequestDeviceCode(ClientContext &context) {
 	std::ostringstream body;
 	body << "client_id=" << CLIENT_ID << "&scope=" << SCOPES_ENCODED;
 
 	std::string device_code_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/devicecode";
 
-	std::string response = PerformHttpsRequest("login.microsoftonline.com", device_code_endpoint,
+	std::string response = PerformHttpsRequest(context, "login.microsoftonline.com", device_code_endpoint,
 	                                           "", // No token needed for this request
 	                                           HttpMethod::POST, body.str(), "application/x-www-form-urlencoded");
 
 	return ParseJsonResponse(response, "device code");
 }
 
-static json PollDeviceCodeToken(const std::string &device_code, int interval_seconds, int expires_in_seconds) {
+static json PollDeviceCodeToken(ClientContext &context, const std::string &device_code, int interval_seconds,
+                                int expires_in_seconds) {
 	std::ostringstream body;
 	body << "grant_type=urn:ietf:params:oauth:grant-type:device_code"
 	     << "&client_id=" << CLIENT_ID << "&device_code=" << device_code;
@@ -99,7 +100,7 @@ static json PollDeviceCodeToken(const std::string &device_code, int interval_sec
 	while (std::chrono::steady_clock::now() < deadline) {
 		try {
 			std::string response =
-			    PerformHttpsRequest("login.microsoftonline.com", token_endpoint,
+			    PerformHttpsRequest(context, "login.microsoftonline.com", token_endpoint,
 			                        "", // No bearer token needed during polling
 			                        HttpMethod::POST, body.str(), "application/x-www-form-urlencoded");
 			return ParseJsonResponse(response, "token");
@@ -145,13 +146,13 @@ static json PollDeviceCodeToken(const std::string &device_code, int interval_sec
 	throw IOException("Device code expired before sign-in completed. Please run CREATE SECRET again.");
 }
 
-static SharepointRefreshTokenResult RefreshAccessToken(const std::string &refresh_token) {
+static SharepointRefreshTokenResult RefreshAccessToken(ClientContext &context, const std::string &refresh_token) {
 	const std::string token_endpoint = "/" + TENANT_ID + "/oauth2/v2.0/token";
 	const auto body = BuildRefreshTokenRequestBody(refresh_token);
 
 	try {
-		const auto response = PerformHttpsRequest("login.microsoftonline.com", token_endpoint, "", HttpMethod::POST,
-		                                          body, "application/x-www-form-urlencoded");
+		const auto response = PerformHttpsRequest(context, "login.microsoftonline.com", token_endpoint, "",
+		                                          HttpMethod::POST, body, "application/x-www-form-urlencoded");
 		return ParseRefreshTokenResponse(response, refresh_token, std::chrono::system_clock::now());
 	} catch (const std::exception &ex) {
 		auto error_body = ExtractHttpErrorBody(ex);
@@ -177,7 +178,7 @@ static SharepointRefreshTokenResult RefreshAccessToken(const std::string &refres
 
 static std::string RefreshAndPersistAccessToken(ClientContext &context, const KeyValueSecret &kv_secret,
                                                 const SecretMatch &secret_match, const std::string &refresh_token) {
-	auto refreshed = RefreshAccessToken(refresh_token);
+	auto refreshed = RefreshAccessToken(context, refresh_token);
 
 	auto refreshed_secret = make_uniq<KeyValueSecret>(kv_secret.GetScope(), kv_secret.GetType(),
 	                                                  kv_secret.GetProvider(), kv_secret.GetName());
@@ -199,7 +200,7 @@ static unique_ptr<BaseSecret> CreateSharepointSecretFromOAuth(ClientContext &con
 	std::cout << "\n= SharePoint Device Code Authentication =\n\n";
 
 	// 1. Request a device code from Microsoft
-	json device_code_response = RequestDeviceCode();
+	json device_code_response = RequestDeviceCode(context);
 
 	std::string device_code = device_code_response.value("device_code", "");
 	std::string user_code = device_code_response.value("user_code", "");
@@ -225,7 +226,7 @@ static unique_ptr<BaseSecret> CreateSharepointSecretFromOAuth(ClientContext &con
 	std::cout << "Waiting for Microsoft sign-in to complete...\n";
 
 	// 3. Poll the token endpoint until the user finishes signing in
-	json token_response = PollDeviceCodeToken(device_code, interval, expires_in);
+	json token_response = PollDeviceCodeToken(context, device_code, interval, expires_in);
 
 	// 4. Extract tokens
 	std::string access_token = token_response["access_token"];

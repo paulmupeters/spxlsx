@@ -164,7 +164,7 @@ static std::string Base64UrlEncode(const std::string &value) {
 	return encoded;
 }
 
-static SharePointFileInfo GetFileInfo(const std::string &url, const std::string &token) {
+static SharePointFileInfo GetFileInfo(ClientContext &context, const std::string &url, const std::string &token) {
 	SharePointFileInfo info;
 
 	// Extract site
@@ -179,7 +179,8 @@ static SharePointFileInfo GetFileInfo(const std::string &url, const std::string 
 		site_path << "/v1.0/sites/" << tenant << ".sharepoint.com:" << site_url;
 	}
 
-	std::string site_response = PerformHttpsRequest("graph.microsoft.com", site_path.str(), token, HttpMethod::GET);
+	std::string site_response =
+	    PerformHttpsRequest(context, "graph.microsoft.com", site_path.str(), token, HttpMethod::GET);
 
 	auto site_doc = duckdb_yyjson::yyjson_read(site_response.c_str(), site_response.length(), 0);
 	if (!site_doc) {
@@ -230,7 +231,7 @@ static SharePointFileInfo GetFileInfo(const std::string &url, const std::string 
 		shared_item_path << "/v1.0/shares/u!" << encoded_url << "/driveItem";
 
 		std::string shared_item_response =
-		    PerformHttpsRequest("graph.microsoft.com", shared_item_path.str(), token, HttpMethod::GET);
+		    PerformHttpsRequest(context, "graph.microsoft.com", shared_item_path.str(), token, HttpMethod::GET);
 
 		auto shared_doc = duckdb_yyjson::yyjson_read(shared_item_response.c_str(), shared_item_response.length(), 0);
 		if (!shared_doc) {
@@ -269,7 +270,8 @@ static SharePointFileInfo GetFileInfo(const std::string &url, const std::string 
 	std::ostringstream drives_path;
 	drives_path << "/v1.0/sites/" << info.site_id << "/drives";
 
-	std::string drives_response = PerformHttpsRequest("graph.microsoft.com", drives_path.str(), token, HttpMethod::GET);
+	std::string drives_response =
+	    PerformHttpsRequest(context, "graph.microsoft.com", drives_path.str(), token, HttpMethod::GET);
 
 	auto drives_doc = duckdb_yyjson::yyjson_read(drives_response.c_str(), drives_response.length(), 0);
 	if (!drives_doc) {
@@ -298,7 +300,8 @@ static SharePointFileInfo GetFileInfo(const std::string &url, const std::string 
 	std::ostringstream item_path;
 	item_path << "/v1.0/sites/" << info.site_id << "/drives/" << info.drive_id << "/root:" << file_path;
 
-	std::string item_response = PerformHttpsRequest("graph.microsoft.com", item_path.str(), token, HttpMethod::GET);
+	std::string item_response =
+	    PerformHttpsRequest(context, "graph.microsoft.com", item_path.str(), token, HttpMethod::GET);
 
 	auto item_doc = duckdb_yyjson::yyjson_read(item_response.c_str(), item_response.length(), 0);
 	if (!item_doc) {
@@ -372,7 +375,7 @@ static void SharepointDownloadExcelScalar(DataChunk &args, ExpressionState &stat
 		// Get file information
 		SharePointFileInfo file_info;
 		try {
-			file_info = GetFileInfo(url, token);
+			file_info = GetFileInfo(state.GetContext(), url, token);
 		} catch (const std::exception &e) {
 			throw IOException("Failed to get file information: " + std::string(e.what()));
 		}
@@ -383,7 +386,8 @@ static void SharepointDownloadExcelScalar(DataChunk &args, ExpressionState &stat
 		// Download file content
 		std::string content;
 		try {
-			content = DownloadSharepointFileContent(file_info.site_id, file_info.drive_id, file_info.item_id, token);
+			content = DownloadSharepointFileContent(state.GetContext(), file_info.site_id, file_info.drive_id,
+			                                        file_info.item_id, token);
 		} catch (const std::exception &e) {
 			throw IOException("Failed to download Excel file from SharePoint: " + std::string(e.what()));
 		}
