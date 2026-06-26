@@ -35,10 +35,10 @@ if (NOT EMSCRIPTEN)
   add_executable(sharepoint_requests_test
       test/sharepoint_requests_test.cpp
   )
-  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  if (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MINGW)
     # GNU ld resolves static archives from left to right. DuckDB's generated
     # extension loader and the extension archives depend on each other, so
-    # Linux needs the archive group to be rescanned.
+    # GNU-style linkers need the archive group to be rescanned.
     target_link_libraries(sharepoint_requests_test "-Wl,--start-group")
     link_extension_libraries(sharepoint_requests_test "")
     target_link_libraries(sharepoint_requests_test duckdb_static "-Wl,--end-group")
