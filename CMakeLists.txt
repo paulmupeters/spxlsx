@@ -7,6 +7,21 @@ set(EXTENSION_NAME ${TARGET_NAME}_extension)
 set(LOADABLE_EXTENSION_NAME ${TARGET_NAME}_loadable_extension)
 
 project(${TARGET_NAME})
+
+if (MSVC)
+  # Newer MSVC toolchains need C++17 to compile DuckDB's bundled fmt headers.
+  set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to enforce" FORCE)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_CXX_EXTENSIONS OFF)
+
+  get_directory_property(SPXLSX_PARENT_DIRECTORY PARENT_DIRECTORY)
+  if (SPXLSX_PARENT_DIRECTORY)
+    set(CMAKE_CXX_STANDARD 17 PARENT_SCOPE)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON PARENT_SCOPE)
+    set(CMAKE_CXX_EXTENSIONS OFF PARENT_SCOPE)
+  endif()
+endif()
+
 include_directories(src/include)
 include_directories(third_party/json/single_include)
 
