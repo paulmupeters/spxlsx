@@ -1,6 +1,5 @@
 {
         "dependencies": [
-                "openssl",
                 "nlohmann-json"
         ],
         "vcpkg-configuration": {

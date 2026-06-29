@@ -78,7 +78,7 @@ static std::string ExtractFieldValueAsString(const json &field_value) {
 // Helper: Get Site ID from SharePoint URL
 // ============================================================================
 
-static std::string GetSiteId(const std::string &url, const std::string &token) {
+static std::string GetSiteId(ClientContext &context, const std::string &url, const std::string &token) {
 	std::string tenant = SharepointUtils::ExtractTenantFromUrl(url);
 	std::string site_path = SharepointUtils::ExtractSiteUrl(url);
 
@@ -96,7 +96,7 @@ static std::string GetSiteId(const std::string &url, const std::string &token) {
 		path << "/v1.0/sites/" << tenant << ".sharepoint.com:" << site_path;
 	}
 
-	std::string response = PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+	std::string response = PerformHttpsRequest(context, "graph.microsoft.com", path.str(), token, HttpMethod::GET);
 
 	json site_data = json::parse(response);
 
@@ -111,7 +111,8 @@ static std::string GetSiteId(const std::string &url, const std::string &token) {
 // Helper: Get List ID by name
 // ============================================================================
 
-static std::string GetListIdByName(const std::string &site_id, const std::string &list_name, const std::string &token) {
+static std::string GetListIdByName(ClientContext &context, const std::string &site_id, const std::string &list_name,
+                                   const std::string &token) {
 	// Build the filter expression: displayName eq 'listname'
 	// The single quotes and the list name need to be URL-encoded in the query string
 	std::ostringstream filter;
@@ -120,7 +121,7 @@ static std::string GetListIdByName(const std::string &site_id, const std::string
 	std::ostringstream path;
 	path << "/v1.0/sites/" << site_id << "/lists?$filter=" << SharepointUtils::UrlEncode(filter.str());
 
-	std::string response = PerformHttpsRequest("graph.microsoft.com", path.str(), token, HttpMethod::GET);
+	std::string response = PerformHttpsRequest(context, "graph.microsoft.com", path.str(), token, HttpMethod::GET);
 
 	json lists_data = json::parse(response);
 
@@ -168,13 +169,13 @@ static unique_ptr<FunctionData> SharepointReadBind(ClientContext &context, Table
 	}
 
 	// 5. Get site ID
-	bind_data->site_id = GetSiteId(url, bind_data->token);
+	bind_data->site_id = GetSiteId(context, url, bind_data->token);
 
 	// 6. Get list ID
-	bind_data->list_id = GetListIdByName(bind_data->site_id, list_name, bind_data->token);
+	bind_data->list_id = GetListIdByName(context, bind_data->site_id, list_name, bind_data->token);
 
 	// 7. Fetch list schema (columns)
-	std::string list_metadata = GetListMetadata(bind_data->site_id, bind_data->list_id, bind_data->token);
+	std::string list_metadata = GetListMetadata(context, bind_data->site_id, bind_data->list_id, bind_data->token);
 
 	json metadata = json::parse(list_metadata);
 
@@ -258,7 +259,7 @@ static void SharepointReadFunction(ClientContext &context, TableFunctionInput &d
 
 	// Lazy load: fetch data on first execution or when we need next page
 	if (state.response_json.empty()) {
-		state.response_json = CallGraphApiListItems(bind_data.site_id, bind_data.list_id, bind_data.token,
+		state.response_json = CallGraphApiListItems(context, bind_data.site_id, bind_data.list_id, bind_data.token,
 		                                            "", // select all fields
 		                                            bind_data.filter, bind_data.top);
 		state.row_index = 0;
@@ -377,7 +378,7 @@ static void SharepointReadFunction(ClientContext &context, TableFunctionInput &d
 
 				// Fetch next page
 				state.response_json =
-				    PerformHttpsRequest("graph.microsoft.com", next_path, bind_data.token, HttpMethod::GET);
+				    PerformHttpsRequest(context, "graph.microsoft.com", next_path, bind_data.token, HttpMethod::GET);
 				state.row_index = 0;
 			} else {
 				state.finished = true;

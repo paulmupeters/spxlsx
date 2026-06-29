@@ -6,11 +6,9 @@
 #include "sharepoint_excel.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/http_util.hpp"
 #include "duckdb/catalog/default/default_table_functions.hpp"
 #include "duckdb/main/extension_helper.hpp"
-
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 
 namespace duckdb {
 
@@ -77,17 +75,20 @@ static const DefaultTableMacro sharepoint_table_macros[] = {
     {nullptr, nullptr, {nullptr}, {{nullptr, nullptr}}, nullptr}};
 
 static void LoadInternal(ExtensionLoader &loader) {
-	// Initialize OpenSSL (required for HTTPS)
-	SSL_library_init();
-	SSL_load_error_strings();
-	OpenSSL_add_all_algorithms();
+	auto &instance = loader.GetDatabaseInstance();
+	auto &http_util = HTTPUtil::Get(instance);
+	if (http_util.GetName() == "Built-In") {
+		if (!ExtensionHelper::TryAutoLoadExtension(instance, "httpfs")) {
+			DUCKDB_LOG_WARNING(instance,
+			                   "Could not load dependency 'httpfs'; native OAuth POST requests may be unavailable");
+		}
+	}
 
 	// Excel powers read_sharepoint_excel, but sharepoint itself should still load if excel is not installed yet.
 	// Try loading excel only when it is already available locally.
-	if (!ExtensionHelper::TryAutoLoadAvailableExtension(loader.GetDatabaseInstance(), "excel")) {
-		DUCKDB_LOG_WARNING(loader.GetDatabaseInstance(),
-		                   "Could not load optional dependency 'excel'; Excel table functions will remain "
-		                   "unavailable until it is installed");
+	if (!ExtensionHelper::TryAutoLoadAvailableExtension(instance, "excel")) {
+		DUCKDB_LOG_WARNING(instance, "Could not load optional dependency 'excel'; Excel table functions will remain "
+		                             "unavailable until it is installed");
 	}
 
 	// Register authentication functions
