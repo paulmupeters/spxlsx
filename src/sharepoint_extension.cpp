@@ -78,7 +78,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	auto &instance = loader.GetDatabaseInstance();
 	auto &http_util = HTTPUtil::Get(instance);
 	if (http_util.GetName() == "Built-In") {
-		if (!ExtensionHelper::TryAutoLoadExtension(instance, "httpfs")) {
+		if (!ExtensionHelper::TryAutoLoadAvailableExtension(instance, "httpfs")) {
 			DUCKDB_LOG_WARNING(instance,
 			                   "Could not load dependency 'httpfs'; native OAuth POST requests may be unavailable");
 		}
