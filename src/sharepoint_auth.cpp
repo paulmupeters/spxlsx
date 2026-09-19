@@ -337,6 +337,7 @@ void RegisterSharepointAuthFunctions(ExtensionLoader &loader) {
 
 	// Register manual token provider
 	CreateSecretFunction token_function = {"sharepoint", "token", CreateSharepointSecretFromToken};
+	token_function.named_parameters["token"] = LogicalType::VARCHAR;
 	loader.RegisterFunction(token_function);
 }
 

@@ -8,6 +8,17 @@ require spxlsx
 statement ok
 LOAD spxlsx;
 
+# Test that the manual token provider accepts its documented TOKEN parameter.
+statement ok
+CREATE SECRET sharepoint_token_test (
+    TYPE sharepoint,
+    PROVIDER token,
+    TOKEN 'test-access-token'
+);
+
+statement ok
+DROP SECRET sharepoint_token_test;
+
 # Test that the download function is registered
 query I
 SELECT COUNT(*)
